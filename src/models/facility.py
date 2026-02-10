@@ -1,6 +1,10 @@
 from dataclasses import dataclass, field
+from datetime import datetime
 
-from functions import generate_id
+from ..functions import generate_id
+
+from ..enums import UFCGrade
+from .dependency_position import DependencyPosition
 
 
 @dataclass
@@ -18,7 +22,7 @@ class Facility:
 
     # Core attributes
     year_constructed: int | None = None
-    dependency_chain: DependencyChain = field(default_factory=DependencyChain)
+    dependency_position: DependencyPosition = field(default_factory=DependencyPosition)
     resiliency_grade: UFCGrade | None = None
 
     # Parent reference
@@ -47,16 +51,6 @@ class Facility:
             return self._age_months
         if self.year_constructed is None:
             return None
-        now = datetime.now()
+        now: datetime = datetime.now()
         years = now.year - self.year_constructed
         return years * 12 + now.month - 1
-
-    @property
-    def dependency_tier(self) -> DependencyTier | None:
-        """Get dependency tier shortcut."""
-        return self.dependency_chain.tier
-
-    @property
-    def dependency_position(self) -> str | None:
-        """Get dependency position string shortcut."""
-        return self.dependency_chain.position

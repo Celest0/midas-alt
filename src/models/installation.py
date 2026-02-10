@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from functions import generate_id
+from ..functions import generate_id
 
 
 @dataclass

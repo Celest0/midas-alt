@@ -37,7 +37,7 @@ def main():
 
     # Load settings (use defaults if no config file)
     config_path = Path(__file__).parent.parent / "src" / "config" / "midas_config_values.xlsx"
-    
+
     if config_path.exists():
         print(f"\nLoading settings from: {config_path}")
         settings = MIDASSettings.from_excel(config_path)
@@ -70,12 +70,18 @@ def main():
     # Show sample features
     print("\nSample features (first row):")
     sample = X_facilities.iloc[0]
-    for col in ["condition_index", "age_months", "life_expectancy_months", 
-                "mission_criticality", "resiliency_grade", "remaining_life_ratio"]:
+    for col in [
+        "condition_index",
+        "age_months",
+        "life_expectancy_months",
+        "mission_criticality",
+        "resiliency_grade",
+        "remaining_life_ratio",
+    ]:
         if col in sample:
             print(f"  {col}: {sample[col]}")
 
-    print(f"\nLabel distribution:")
+    print("\nLabel distribution:")
     print(f"  Min months to degradation: {y_facilities.min():.1f}")
     print(f"  Max months to degradation: {y_facilities.max():.1f}")
     print(f"  Mean months to degradation: {y_facilities.mean():.1f}")
@@ -115,7 +121,7 @@ def main():
 
     rf_model = models[2]  # Random Forest
     top_features = rf_model.get_top_features(n=8)
-    
+
     if top_features:
         print("\nTop features:")
         for feature, importance in top_features:
@@ -135,7 +141,7 @@ def main():
     print("\nSample predictions (Random Forest with 80% confidence interval):")
     print(f"{'Actual':>10} | {'Predicted':>10} | {'Low':>8} | {'High':>8} | {'Error':>8}")
     print("-" * 55)
-    
+
     for i, (pred, actual) in enumerate(zip(predictions, sample_y)):
         error = abs(pred.months_to_degradation - actual)
         print(

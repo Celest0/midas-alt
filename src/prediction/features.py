@@ -9,7 +9,8 @@ from datetime import datetime
 import pandas as pd
 
 from ..config.settings import MIDASSettings
-from ..domain import EntityType, Facility, System
+from ..enums import EntityType
+from ..models import Facility, System
 
 
 @dataclass
@@ -102,6 +103,7 @@ class FeatureExtractor:
 
         Args:
             settings: Application settings with facility/system types.
+
         """
         self.settings = settings
 
@@ -119,12 +121,11 @@ class FeatureExtractor:
 
         Returns:
             DegradationFeatures for the facility.
+
         """
         # Get reference data
         facility_type = self.settings.get_facility_type(facility.facility_type_key or 0)
-        life_expectancy = (
-            facility_type.life_expectancy_months if facility_type else 600
-        )  # Default 50 years
+        life_expectancy = facility_type.life_expectancy_months if facility_type else 600  # Default 50 years
         mission_crit = facility_type.mission_criticality if facility_type else 1
 
         age_months = facility.age_months or 0
@@ -188,6 +189,7 @@ class FeatureExtractor:
 
         Returns:
             DegradationFeatures for the system.
+
         """
         # Get reference data
         system_type = self.settings.get_system_type(system.system_type_key or 0)
@@ -267,6 +269,7 @@ class FeatureExtractor:
 
         Returns:
             DataFrame with one row per entity.
+
         """
         features_list = []
 

@@ -8,7 +8,7 @@ from rich.text import Text
 
 from src.cli.menu import get_main_menu
 from src.cli.utils import DisplayHelper, InputHelper
-from src.config.app_state import get_app_state, set_app_state, ApplicationState
+from src.config.app_state import ApplicationState, set_app_state
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -22,26 +22,26 @@ console = Console()
 def initialize_configuration() -> None:
     """Initialize configuration from Excel file on startup."""
     DisplayHelper.print_info("Loading configuration...", title="MIDAS")
-    
+
     try:
         # Initialize application state (loads configuration)
         state = ApplicationState.initialize()
         set_app_state(state)
-        
+
         # Display status message
         status_message = state.get_status_message()
-        
+
         if state.initialized_successfully:
             DisplayHelper.print_info(status_message, title="MIDAS")
         else:
             DisplayHelper.print_error(status_message, title="MIDAS")
             console.print("[yellow]Continuing with limited functionality...[/yellow]\n")
-            
+
     except Exception as e:
         error_msg = f"Error loading configuration: {e}"
         DisplayHelper.print_error(error_msg, title="MIDAS")
         logger.exception("Error during initial configuration load")
-        
+
         # Create default state so app can continue
         set_app_state(ApplicationState.with_defaults())
         console.print("[yellow]Continuing with limited functionality...[/yellow]\n")
@@ -66,6 +66,16 @@ def run_cli() -> None:
     display_welcome()
     initialize_configuration()
     get_main_menu().run()
+
+
+# ============================================================================
+# Demo Entry Point
+# ============================================================================
+
+
+def run_demo() -> None:
+    display_welcome()
+    initialize_configuration()
 
 
 if __name__ == "__main__":

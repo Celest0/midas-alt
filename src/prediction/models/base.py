@@ -18,6 +18,7 @@ class Prediction:
         confidence_high: Upper bound of prediction (e.g., 90th percentile).
         predicted_trajectory: Optional list of (month_offset, predicted_ci) tuples
                              showing the expected degradation path.
+
     """
 
     months_to_degradation: float
@@ -66,6 +67,7 @@ class DegradationModel(ABC):
 
         Returns:
             self for method chaining.
+
         """
         pass
 
@@ -78,12 +80,11 @@ class DegradationModel(ABC):
 
         Returns:
             Array of predicted months to degradation.
+
         """
         pass
 
-    def predict_with_uncertainty(
-        self, X: pd.DataFrame, confidence: float = 0.8
-    ) -> list[Prediction]:
+    def predict_with_uncertainty(self, X: pd.DataFrame, confidence: float = 0.8) -> list[Prediction]:
         """Predict with confidence intervals.
 
         Default implementation returns symmetric intervals based on
@@ -95,6 +96,7 @@ class DegradationModel(ABC):
 
         Returns:
             List of Prediction objects with uncertainty bounds.
+
         """
         predictions = self.predict(X)
         margin = (1 - confidence) / 2
@@ -121,6 +123,7 @@ class DegradationModel(ABC):
 
         Returns:
             Dictionary of metric name -> value.
+
         """
         from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 

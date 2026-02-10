@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from ....domain import Facility, Installation, System
+from ....models import Facility, Installation, System
 from ..enums import OutputLayout
 from .base import BaseFormatter
 
@@ -31,6 +31,7 @@ class JSONFormatter(BaseFormatter):
 
         Returns:
             Path to the output file.
+
         """
         if self.config.layout == OutputLayout.NORMALIZED:
             return self._export_normalized(installations, facilities, systems, metadata)
@@ -56,9 +57,7 @@ class JSONFormatter(BaseFormatter):
 
         # Update metadata
         if metadata:
-            metadata["record_counts"] = {
-                name: len(records) for name, records in data.items()
-            }
+            metadata["record_counts"] = {name: len(records) for name, records in data.items()}
 
         # Include metadata in output if requested
         output = {"data": data}

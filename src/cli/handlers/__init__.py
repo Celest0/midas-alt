@@ -4,6 +4,7 @@ from .config_handlers import (
     handle_reload_configuration,
     handle_view_config_values,
     handle_view_facility_types_summary,
+    handle_view_installation_locations_summary,
     handle_view_system_types_summary,
 )
 from .ml_handlers import (
@@ -25,6 +26,7 @@ __all__ = [
     "handle_reload_configuration",
     "handle_view_config_values",
     "handle_view_facility_types_summary",
+    "handle_view_installation_locations_summary",
     "handle_view_system_types_summary",
     # ML handlers
     "handle_create_training_dataset",

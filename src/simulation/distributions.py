@@ -10,7 +10,7 @@ import re
 
 class ProbabilitySegment:
     """Represents a single segment in a probability distribution.
-    
+
     A segment has a percentage weight and a value (either a single int or a range).
     """
 
@@ -20,6 +20,7 @@ class ProbabilitySegment:
         Args:
             percentage: Percentage weight (1-100).
             value: Segment value string (e.g., "50" or "20-40").
+
         """
         if not (1 <= percentage <= 100):
             raise ValueError(f"Percentage must be between 1 and 100, got {percentage}")
@@ -111,6 +112,7 @@ class ProbabilitySegment:
 
         Returns:
             Match object if format matches, None otherwise.
+
         """
         return re.match(r"(?:\d+:)?\s*\(?\s*(\d+)\s*[,|:]\s*(\d+)\s*-\s*(\d+)\s*\)?", line_value)
 
@@ -123,6 +125,7 @@ class ProbabilityDistribution:
 
         Args:
             segments: List of probability segments.
+
         """
         if not segments:
             raise ValueError("ProbabilityDistribution must have at least one segment")

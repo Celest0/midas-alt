@@ -37,6 +37,7 @@ class ExponentialDecayModel(DegradationModel):
         Args:
             initial_ci: Assumed initial condition index for all entities.
             degradation_threshold: CI value below which entity is degraded.
+
         """
         self.initial_ci = initial_ci
         self.degradation_threshold = degradation_threshold
@@ -66,6 +67,7 @@ class ExponentialDecayModel(DegradationModel):
 
         Returns:
             Array of predicted months to degradation.
+
         """
         predictions = []
 
@@ -73,16 +75,12 @@ class ExponentialDecayModel(DegradationModel):
             current_ci = row.get("condition_index", 50)
             age_months = row.get("age_months", 0)
 
-            months_to_degrade = self._calculate_months_to_degradation(
-                current_ci, age_months
-            )
+            months_to_degrade = self._calculate_months_to_degradation(current_ci, age_months)
             predictions.append(months_to_degrade)
 
         return np.array(predictions)
 
-    def predict_with_uncertainty(
-        self, X: pd.DataFrame, confidence: float = 0.8
-    ) -> list[Prediction]:
+    def predict_with_uncertainty(self, X: pd.DataFrame, confidence: float = 0.8) -> list[Prediction]:
         """Predict with uncertainty based on decay rate variance.
 
         For the analytical model, we estimate uncertainty by varying
@@ -113,9 +111,7 @@ class ExponentialDecayModel(DegradationModel):
                         months_to_degradation=months,
                         confidence_low=months_fast,
                         confidence_high=months_slow,
-                        predicted_trajectory=self._generate_trajectory(
-                            current_ci, decay_rate, int(months)
-                        ),
+                        predicted_trajectory=self._generate_trajectory(current_ci, decay_rate, int(months)),
                     )
                 )
             else:
@@ -130,9 +126,7 @@ class ExponentialDecayModel(DegradationModel):
 
         return predictions
 
-    def _calculate_decay_rate(
-        self, current_ci: float, age_months: int
-    ) -> float | None:
+    def _calculate_decay_rate(self, current_ci: float, age_months: int) -> float | None:
         """Calculate monthly decay rate from current state.
 
         Formula: R = 1 - (CI_current / CI_initial)^(1/age)
@@ -143,6 +137,7 @@ class ExponentialDecayModel(DegradationModel):
 
         Returns:
             Monthly decay rate, or None if cannot be calculated.
+
         """
         if age_months <= 0:
             return None
@@ -160,9 +155,7 @@ class ExponentialDecayModel(DegradationModel):
         except (ValueError, ZeroDivisionError):
             return None
 
-    def _calculate_months_to_degradation(
-        self, current_ci: float, age_months: int
-    ) -> float:
+    def _calculate_months_to_degradation(self, current_ci: float, age_months: int) -> float:
         """Calculate months until CI falls below threshold.
 
         Args:
@@ -172,6 +165,7 @@ class ExponentialDecayModel(DegradationModel):
         Returns:
             Predicted months until degradation (0 if already degraded,
             large value if decay rate is zero/negative).
+
         """
         # Already degraded
         if current_ci <= self.degradation_threshold:
@@ -197,16 +191,12 @@ class ExponentialDecayModel(DegradationModel):
             return 0.0
 
         try:
-            months = math.log(self.degradation_threshold / current_ci) / math.log(
-                1 - decay_rate
-            )
+            months = math.log(self.degradation_threshold / current_ci) / math.log(1 - decay_rate)
             return max(0, months)
         except (ValueError, ZeroDivisionError):
             return 999.0
 
-    def _generate_trajectory(
-        self, current_ci: float, decay_rate: float, months_ahead: int
-    ) -> list[tuple[int, float]]:
+    def _generate_trajectory(self, current_ci: float, decay_rate: float, months_ahead: int) -> list[tuple[int, float]]:
         """Generate predicted CI trajectory.
 
         Args:
@@ -216,6 +206,7 @@ class ExponentialDecayModel(DegradationModel):
 
         Returns:
             List of (month_offset, predicted_ci) tuples.
+
         """
         trajectory = [(0, current_ci)]
         ci = current_ci

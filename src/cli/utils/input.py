@@ -10,9 +10,7 @@ class InputHelper:
     """Helper class for consistent input handling across the CLI."""
 
     @staticmethod
-    def get_input_with_backspace(
-        prompt: str, default: str = "", allow_empty: bool = False
-    ) -> str | None:
+    def get_input_with_backspace(prompt: str, default: str = "", allow_empty: bool = False) -> str | None:
         """Get user input with backspace support and empty input handling.
 
         Args:
@@ -40,9 +38,7 @@ class InputHelper:
             return None
 
     @staticmethod
-    def ask_yes_no(
-        prompt: str, default: bool = True, allow_back: bool = False
-    ) -> bool | None:
+    def ask_yes_no(prompt: str, default: bool = True, allow_back: bool = False) -> bool | None:
         """Ask a yes/no question with consistent handling.
 
         Args:

@@ -4,14 +4,13 @@ import logging
 from pathlib import Path
 
 from rich.console import Console
-from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
+from src.models import Facility, Installation, System
 
 from src.cli.utils import DisplayHelper, InputHelper, NavigationHelper
 from src.config import MIDASSettings
 from src.config.app_state import get_app_state
-from src.domain import Facility, Installation, System
 from src.simulation import DataExporter, DataGenerator
 
 logger = logging.getLogger(__name__)
@@ -91,7 +90,7 @@ def _format_facility(facility: Facility, settings: MIDASSettings) -> str:
     """Format a facility for display."""
     facility_type = settings.get_facility_type(facility.facility_type_key or 0)
     title = facility_type.title if facility_type else f"Facility {facility.facility_type_key}"
-    
+
     lines = [
         f"ID: {facility.id}",
         f"Type: {title} (Key: {facility.facility_type_key})",
@@ -109,7 +108,7 @@ def _format_system(system: System, settings: MIDASSettings) -> str:
     """Format a system for display."""
     system_type = settings.get_system_type(system.system_type_key or 0)
     title = system_type.title if system_type else f"System {system.system_type_key}"
-    
+
     lines = [
         f"ID: {system.id}",
         f"Type: {title} (Key: {system.system_type_key})",
@@ -138,7 +137,7 @@ def handle_view_simulated_data_examples() -> None:
 
     # Generate an installation for exploration
     installation, facilities, systems = generator.generate_installation()
-    
+
     # Build lookup maps
     facilities_by_id = {f.id: f for f in facilities}
     systems_by_facility = {}
@@ -157,10 +156,7 @@ def handle_view_simulated_data_examples() -> None:
 
         if current_level == "installation":
             console.print("\n[bold cyan]Navigation:[/bold cyan] [green]Installation[/green]\n")
-            DisplayHelper.print_panel(
-                content=_format_installation(installation, facilities),
-                title="Installation Overview"
-            )
+            DisplayHelper.print_panel(content=_format_installation(installation, facilities), title="Installation Overview")
 
             if not facilities:
                 DisplayHelper.print_warning("This installation has no facilities.")
@@ -205,25 +201,19 @@ def handle_view_simulated_data_examples() -> None:
                 InputHelper.wait_for_continue()
 
         elif current_level == "facility":
-            console.print(
-                "\n[bold cyan]Navigation:[/bold cyan] [green]Installation[/green] > [yellow]Facility[/yellow]\n"
-            )
-            
+            console.print("\n[bold cyan]Navigation:[/bold cyan] [green]Installation[/green] > [yellow]Facility[/yellow]\n")
+
             facility_type = settings.get_facility_type(current_facility.facility_type_key or 0)
             title = facility_type.title if facility_type else "Unknown Facility"
-            
-            DisplayHelper.print_panel(
-                content=_format_facility(current_facility, settings),
-                title=f"Facility: {title}"
-            )
+
+            DisplayHelper.print_panel(content=_format_facility(current_facility, settings), title=f"Facility: {title}")
 
             facility_systems = systems_by_facility.get(current_facility.id, [])
-            
+
             if not facility_systems:
                 DisplayHelper.print_warning("This facility has no systems.")
                 choice = InputHelper.get_input_with_backspace(
-                    "Press Enter to return to facilities or 'b' to go back",
-                    allow_empty=True
+                    "Press Enter to return to facilities or 'b' to go back", allow_empty=True
                 )
                 current_level = "installation"
                 current_facility = None
@@ -273,19 +263,15 @@ def handle_view_simulated_data_examples() -> None:
                 "\n[bold cyan]Navigation:[/bold cyan] [green]Installation[/green] > "
                 "[yellow]Facility[/yellow] > [magenta]System[/magenta]\n"
             )
-            
+
             system_type = settings.get_system_type(current_system.system_type_key or 0)
             title = system_type.title if system_type else "Unknown System"
-            
-            DisplayHelper.print_panel(
-                content=_format_system(current_system, settings),
-                title=f"System: {title}"
-            )
+
+            DisplayHelper.print_panel(content=_format_system(current_system, settings), title=f"System: {title}")
 
             console.print("\n")
             choice = InputHelper.get_input_with_backspace(
-                "Press Enter to return to systems, or 'b' to go back to facilities",
-                allow_empty=True
+                "Press Enter to return to systems, or 'b' to go back to facilities", allow_empty=True
             )
 
             if NavigationHelper.can_go_back(choice):
@@ -412,7 +398,9 @@ def handle_generate_data() -> None:
                 "• facilities: Specific number of facilities",
                 "default, installations, facilities",
             )
-            prompt = f"[{step + 1}/{total_steps}] Method (installations/facilities/default) (current: {current_value}, 'b' to go back):"
+            prompt = (
+                f"[{step + 1}/{total_steps}] Method (installations/facilities/default) (current: {current_value}, 'b' to go back):"
+            )
             value = InputHelper.get_input_with_backspace(prompt, default=current_value, allow_empty=False)
 
             if value is None:
@@ -472,9 +460,7 @@ def handle_generate_data() -> None:
                 "normalized (recommended), denormalized",
             )
             prompt = f"[{step + 1}/{total_steps}] Layout (normalized/denormalized) (current: {current_value}, 'b' to go back):"
-            value = InputHelper.ask_choice(
-                prompt, choices=["normalized", "denormalized"], default=current_value, allow_back=True
-            )
+            value = InputHelper.ask_choice(prompt, choices=["normalized", "denormalized"], default=current_value, allow_back=True)
 
             if value is None:
                 step -= 1
@@ -547,7 +533,7 @@ def handle_generate_data() -> None:
     # Generate and export data
     try:
         DisplayHelper.print_info("Generating data...", title="MIDAS")
-        
+
         settings = _get_settings()
 
         exporter = DataExporter(
@@ -588,7 +574,7 @@ def handle_view_facility_and_system() -> None:
     generator = DataGenerator(settings=settings)
 
     installation, facilities, systems = generator.generate_installation()
-    
+
     if not facilities:
         DisplayHelper.print_warning("No facilities generated.")
         return
@@ -596,10 +582,7 @@ def handle_view_facility_and_system() -> None:
     facility = facilities[0]
     facility_systems = [s for s in systems if s.facility_id == facility.id]
 
-    DisplayHelper.print_panel(
-        content=_format_facility(facility, settings),
-        title="Simulated Facility Data"
-    )
+    DisplayHelper.print_panel(content=_format_facility(facility, settings), title="Simulated Facility Data")
 
     if not facility_systems:
         DisplayHelper.print_warning("This facility has no systems to display.")
@@ -621,10 +604,7 @@ def handle_view_facility_and_system() -> None:
         )
         selected_system = facility_systems[int(choice) - 1]
 
-        DisplayHelper.print_panel(
-            content=_format_system(selected_system, settings),
-            title=f"System Details"
-        )
+        DisplayHelper.print_panel(content=_format_system(selected_system, settings), title="System Details")
         InputHelper.wait_for_continue()
     except (ValueError, IndexError) as e:
         DisplayHelper.print_error(f"Invalid selection: {e}")
@@ -640,22 +620,22 @@ def handle_view_installation_interactive() -> None:
 def handle_quick_generate() -> None:
     """Quick generate data and display summary statistics."""
     DisplayHelper.clear_screen()
-    
+
     console.print("\n[bold cyan]Quick Generate - Summary Statistics[/bold cyan]\n")
     console.print("Generating sample data with default settings...\n")
-    
+
     settings = _get_settings()
     generator = DataGenerator(settings=settings)
-    
+
     # Generate data
     installation, facilities, systems = generator.generate_installation()
-    
+
     # Calculate statistics
     facility_cis = [f.condition_index for f in facilities if f.condition_index is not None]
     facility_ages = [f.age_years for f in facilities if f.age_years is not None]
     system_cis = [s.condition_index for s in systems if s.condition_index is not None]
     system_ages = [s.age_years for s in systems if s.age_years is not None]
-    
+
     # Create summary table
     summary_table = Table(
         title="Generation Summary",
@@ -665,16 +645,16 @@ def handle_quick_generate() -> None:
     )
     summary_table.add_column("Metric", style="cyan", width=30)
     summary_table.add_column("Value", style="green", justify="right", width=20)
-    
+
     summary_table.add_row("Installation ID", installation.id[:20] + "...")
     summary_table.add_row("Installation Title", installation.title or "N/A")
     summary_table.add_section()
     summary_table.add_row("Total Facilities", str(len(facilities)))
     summary_table.add_row("Total Systems", str(len(systems)))
     summary_table.add_row("Avg Systems per Facility", f"{len(systems) / max(1, len(facilities)):.1f}")
-    
+
     DisplayHelper.print_table(summary_table)
-    
+
     # Condition Index Distribution
     if facility_cis:
         ci_table = Table(
@@ -687,7 +667,7 @@ def handle_quick_generate() -> None:
         ci_table.add_column("Max", justify="right", width=10)
         ci_table.add_column("Mean", justify="right", width=10)
         ci_table.add_column("Count", justify="right", width=10)
-        
+
         ci_table.add_row(
             "Facilities",
             f"{min(facility_cis):.1f}",
@@ -695,7 +675,7 @@ def handle_quick_generate() -> None:
             f"{sum(facility_cis) / len(facility_cis):.1f}",
             str(len(facility_cis)),
         )
-        
+
         if system_cis:
             ci_table.add_row(
                 "Systems",
@@ -704,9 +684,9 @@ def handle_quick_generate() -> None:
                 f"{sum(system_cis) / len(system_cis):.1f}",
                 str(len(system_cis)),
             )
-        
+
         DisplayHelper.print_table(ci_table)
-    
+
     # Age Distribution
     if facility_ages:
         age_table = Table(
@@ -718,14 +698,14 @@ def handle_quick_generate() -> None:
         age_table.add_column("Min", justify="right", width=10)
         age_table.add_column("Max", justify="right", width=10)
         age_table.add_column("Mean", justify="right", width=10)
-        
+
         age_table.add_row(
             "Facilities",
             str(min(facility_ages)),
             str(max(facility_ages)),
             f"{sum(facility_ages) / len(facility_ages):.1f}",
         )
-        
+
         if system_ages:
             age_table.add_row(
                 "Systems",
@@ -733,26 +713,26 @@ def handle_quick_generate() -> None:
                 str(max(system_ages)),
                 f"{sum(system_ages) / len(system_ages):.1f}",
             )
-        
+
         DisplayHelper.print_table(age_table)
-    
+
     # Condition breakdown
     console.print("[bold]Condition Breakdown (Facilities):[/bold]")
-    
+
     if facility_cis:
         good = sum(1 for ci in facility_cis if ci >= 70)
         fair = sum(1 for ci in facility_cis if 50 <= ci < 70)
         poor = sum(1 for ci in facility_cis if 25 <= ci < 50)
         critical = sum(1 for ci in facility_cis if ci < 25)
         total = len(facility_cis)
-        
-        console.print(f"  [green]Good (CI >= 70):[/green]     {good:3} ({good/total*100:5.1f}%)")
-        console.print(f"  [yellow]Fair (50-69):[/yellow]        {fair:3} ({fair/total*100:5.1f}%)")
-        console.print(f"  [orange3]Poor (25-49):[/orange3]        {poor:3} ({poor/total*100:5.1f}%)")
-        console.print(f"  [red]Critical (< 25):[/red]     {critical:3} ({critical/total*100:5.1f}%)")
-    
+
+        console.print(f"  [green]Good (CI >= 70):[/green]     {good:3} ({good / total * 100:5.1f}%)")
+        console.print(f"  [yellow]Fair (50-69):[/yellow]        {fair:3} ({fair / total * 100:5.1f}%)")
+        console.print(f"  [orange3]Poor (25-49):[/orange3]        {poor:3} ({poor / total * 100:5.1f}%)")
+        console.print(f"  [red]Critical (< 25):[/red]     {critical:3} ({critical / total * 100:5.1f}%)")
+
     console.print("\n[dim]Press Enter to generate again, or 'q' to return to menu[/dim]")
-    
+
     choice = InputHelper.get_input_with_backspace("", allow_empty=True)
     if choice is None or choice.lower() == "q":
         return

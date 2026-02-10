@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ...domain import Facility, Installation, System
+from ...models import Facility, Installation, System
 from .config import ExportConfig
 from .enums import OutputFormat, OutputLayout
 from .formatters import CSVFormatter, ExcelFormatter, JSONFormatter
@@ -42,11 +42,12 @@ class DataExporter:
             generate_metadata: Whether to generate a metadata JSON file.
             description: Optional description for the dataset.
             settings: Application settings for reference data.
+
         """
         # Lazy imports to avoid circular dependency
         from ...config import MIDASSettings
         from ..generator import DataGenerator
-        
+
         self.settings = settings or MIDASSettings.with_defaults()
 
         # Create export configuration
@@ -104,6 +105,7 @@ class DataExporter:
 
         Returns:
             Path to the created file.
+
         """
         # Generate data
         if method == "installations":
@@ -148,10 +150,9 @@ class DataExporter:
 
         Returns:
             Path to the created file.
+
         """
-        metadata = self._create_metadata(
-            "existing", None, installations, facilities, systems
-        )
+        metadata = self._create_metadata("existing", None, installations, facilities, systems)
         return self.formatter.export(installations, facilities, systems, metadata)
 
     def _create_metadata(

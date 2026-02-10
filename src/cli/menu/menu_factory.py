@@ -12,6 +12,7 @@ from src.cli.handlers import (
     handle_view_config_values,
     handle_view_facility_types_summary,
     handle_view_features,
+    handle_view_installation_locations_summary,
     handle_view_simulated_data_examples,
     handle_view_system_types_summary,
 )
@@ -32,6 +33,11 @@ def get_configuration_menu():
         "View System Types Summary",
         handle_view_system_types_summary,
         description="Display a summary of all system types loaded from the configuration file",
+    )
+    builder.add_item(
+        "View Installation Locations Summary",
+        handle_view_installation_locations_summary,
+        description="Display a summary of all installation locations loaded from the configuration file",
     )
     builder.add_item(
         "View Config Values",
@@ -126,9 +132,9 @@ def get_main_menu():
         """Navigate to simulation menu."""
         get_simulation_menu().run()
 
-    def handle_ml_prediction() -> None:
-        """Navigate to ML prediction menu."""
-        get_ml_prediction_menu().run()
+    # def handle_ml_prediction() -> None:
+    #     """Navigate to ML prediction menu."""
+    #     get_ml_prediction_menu().run()
 
     def handle_exit() -> None:
         """Exit the application."""
@@ -145,11 +151,11 @@ def get_main_menu():
         handle_simulation,
         description="Generate and explore simulated installations, facilities, and systems",
     )
-    builder.add_item(
-        "ML Prediction",
-        handle_ml_prediction,
-        description="Train models, extract features, and predict degradation timing",
-    )
+    # builder.add_item(
+    #     "ML Prediction",
+    #     handle_ml_prediction,
+    #     description="Train models, extract features, and predict degradation timing",
+    # )
     builder.add_separator()
     builder.add_item(
         "Exit",

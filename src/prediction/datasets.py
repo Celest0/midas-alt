@@ -10,10 +10,11 @@ from enum import Enum
 
 import pandas as pd
 
+from ..models import System, Facility
+
 from ..config.settings import MIDASSettings
-from ..domain import Facility, System
 from ..simulation import DataGenerator
-from .features import DegradationFeatures, FeatureExtractor
+from .features import FeatureExtractor
 
 
 class LabelType(Enum):
@@ -64,6 +65,7 @@ class TrainingDataGenerator:
         Args:
             settings: Application settings.
             config: Dataset generation configuration.
+
         """
         self.settings = settings or MIDASSettings.with_defaults()
         self.config = config or DatasetConfig()
@@ -79,11 +81,10 @@ class TrainingDataGenerator:
 
         Returns:
             Tuple of (features_df, labels_series).
+
         """
         # Generate installations
-        installations, facilities, systems = self.data_generator.generate_installations(
-            self.config.n_installations
-        )
+        installations, facilities, systems = self.data_generator.generate_installations(self.config.n_installations)
 
         # Build facility lookup for system feature extraction
         facilities_map = {f.id: f for f in facilities}
@@ -101,9 +102,7 @@ class TrainingDataGenerator:
 
         for system in systems:
             parent_facility = facilities_map.get(system.facility_id)
-            features = self.feature_extractor.extract_system_features(
-                system, parent_facility
-            )
+            features = self.feature_extractor.extract_system_features(system, parent_facility)
             label = self._compute_label(system)
 
             feature_rows.append(features.to_dict())
@@ -119,10 +118,9 @@ class TrainingDataGenerator:
 
         Returns:
             Tuple of (features_df, labels_series).
+
         """
-        installations, facilities, _ = self.data_generator.generate_installations(
-            self.config.n_installations
-        )
+        installations, facilities, _ = self.data_generator.generate_installations(self.config.n_installations)
 
         feature_rows = []
         labels = []
@@ -144,10 +142,9 @@ class TrainingDataGenerator:
 
         Returns:
             Tuple of (features_df, labels_series).
+
         """
-        installations, facilities, systems = self.data_generator.generate_installations(
-            self.config.n_installations
-        )
+        installations, facilities, systems = self.data_generator.generate_installations(self.config.n_installations)
 
         facilities_map = {f.id: f for f in facilities}
 
@@ -156,9 +153,7 @@ class TrainingDataGenerator:
 
         for system in systems:
             parent_facility = facilities_map.get(system.facility_id)
-            features = self.feature_extractor.extract_system_features(
-                system, parent_facility
-            )
+            features = self.feature_extractor.extract_system_features(system, parent_facility)
             label = self._compute_label(system)
 
             feature_rows.append(features.to_dict())
@@ -177,6 +172,7 @@ class TrainingDataGenerator:
 
         Returns:
             Label value (type depends on label_type).
+
         """
         current_ci = entity.condition_index or 50.0
         age_months = entity.age_months or 0
@@ -201,9 +197,7 @@ class TrainingDataGenerator:
 
         return 0.0
 
-    def _compute_months_to_degradation(
-        self, current_ci: float, age_months: int
-    ) -> float:
+    def _compute_months_to_degradation(self, current_ci: float, age_months: int) -> float:
         """Compute months until CI falls below threshold.
 
         Uses exponential decay model: CI(t) = CI_0 * (1-R)^t
@@ -220,23 +214,17 @@ class TrainingDataGenerator:
             return 0.0  # Already fully degraded
 
         try:
-            months = math.log(self.config.degradation_threshold / current_ci) / math.log(
-                1 - decay_rate
-            )
+            months = math.log(self.config.degradation_threshold / current_ci) / math.log(1 - decay_rate)
             return max(0, months)
         except (ValueError, ZeroDivisionError):
             return 999.0
 
-    def _compute_degradation_rate(
-        self, current_ci: float, age_months: int
-    ) -> float:
+    def _compute_degradation_rate(self, current_ci: float, age_months: int) -> float:
         """Compute monthly degradation rate."""
         rate = self._compute_decay_rate(current_ci, age_months)
         return rate if rate is not None else 0.0
 
-    def _compute_decay_rate(
-        self, current_ci: float, age_months: int
-    ) -> float | None:
+    def _compute_decay_rate(self, current_ci: float, age_months: int) -> float | None:
         """Calculate monthly decay rate from current state.
 
         Formula: R = 1 - (CI_current / CI_initial)^(1/age)
@@ -281,12 +269,11 @@ class ModelEvaluator:
 
         Returns:
             DataFrame comparing model performance.
+
         """
         from sklearn.model_selection import train_test_split
 
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=42
-        )
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
 
         results = []
 
@@ -312,6 +299,7 @@ class ModelEvaluator:
 
         Returns:
             Name of the best model.
+
         """
         if not self.results:
             return ""

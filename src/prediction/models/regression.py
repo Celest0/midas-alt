@@ -38,6 +38,7 @@ class SklearnRegressionModel(DegradationModel):
                 - "xgboost": XGBRegressor (if installed)
             random_state: Random seed for reproducibility.
             **model_kwargs: Additional arguments passed to the model constructor.
+
         """
         self._model_type = model_type
         self._random_state = random_state
@@ -93,9 +94,7 @@ class SklearnRegressionModel(DegradationModel):
                     n_jobs=-1,
                 )
             except ImportError:
-                raise ImportError(
-                    "XGBoost is not installed. Install with: pip install xgboost"
-                )
+                raise ImportError("XGBoost is not installed. Install with: pip install xgboost")
 
         else:
             raise ValueError(f"Unknown model type: {self._model_type}")
@@ -113,12 +112,7 @@ class SklearnRegressionModel(DegradationModel):
 
         # Encode categorical columns (dependency_tier)
         if "dependency_tier" in X_features.columns:
-            X_features["dependency_tier"] = (
-                X_features["dependency_tier"]
-                .map({"P": 0, "S": 1, "T": 2})
-                .fillna(-1)
-                .astype(int)
-            )
+            X_features["dependency_tier"] = X_features["dependency_tier"].map({"P": 0, "S": 1, "T": 2}).fillna(-1).astype(int)
 
         # Convert any remaining object columns to numeric first
         for col in X_features.select_dtypes(include=["object"]).columns:
@@ -138,6 +132,7 @@ class SklearnRegressionModel(DegradationModel):
 
         Returns:
             self for method chaining.
+
         """
         X_prepared = self._prepare_features(X)
         self._feature_columns = list(X_prepared.columns)
@@ -155,6 +150,7 @@ class SklearnRegressionModel(DegradationModel):
 
         Returns:
             Array of predicted months.
+
         """
         if not self._is_fitted:
             raise RuntimeError("Model must be fitted before predicting")
@@ -173,9 +169,7 @@ class SklearnRegressionModel(DegradationModel):
         # Ensure non-negative predictions
         return np.maximum(predictions, 0)
 
-    def predict_with_uncertainty(
-        self, X: pd.DataFrame, confidence: float = 0.8
-    ) -> list[Prediction]:
+    def predict_with_uncertainty(self, X: pd.DataFrame, confidence: float = 0.8) -> list[Prediction]:
         """Predict with uncertainty estimates.
 
         For tree-based models, uses individual tree predictions
@@ -184,17 +178,13 @@ class SklearnRegressionModel(DegradationModel):
         base_predictions = self.predict(X)
 
         # For Random Forest, we can get uncertainty from tree variance
-        if self._model_type == "random_forest" and hasattr(
-            self._model, "estimators_"
-        ):
+        if self._model_type == "random_forest" and hasattr(self._model, "estimators_"):
             X_prepared = self._prepare_features(X)
             if self._feature_columns:
                 X_prepared = X_prepared[self._feature_columns]
 
             # Get predictions from all trees
-            tree_predictions = np.array(
-                [tree.predict(X_prepared) for tree in self._model.estimators_]
-            )
+            tree_predictions = np.array([tree.predict(X_prepared) for tree in self._model.estimators_])
 
             # Calculate percentiles
             margin = (1 - confidence) / 2
@@ -207,12 +197,8 @@ class SklearnRegressionModel(DegradationModel):
                 predictions.append(
                     Prediction(
                         months_to_degradation=float(base_predictions[i]),
-                        confidence_low=float(
-                            max(0, np.percentile(tree_preds, low_percentile))
-                        ),
-                        confidence_high=float(
-                            np.percentile(tree_preds, high_percentile)
-                        ),
+                        confidence_low=float(max(0, np.percentile(tree_preds, low_percentile))),
+                        confidence_high=float(np.percentile(tree_preds, high_percentile)),
                     )
                 )
 
@@ -226,14 +212,13 @@ class SklearnRegressionModel(DegradationModel):
 
         Returns:
             Dict of feature_name -> importance, or None if not available.
+
         """
         if not self._is_fitted or not self._feature_columns:
             return None
 
         if hasattr(self._model, "feature_importances_"):
-            return dict(
-                zip(self._feature_columns, self._model.feature_importances_)
-            )
+            return dict(zip(self._feature_columns, self._model.feature_importances_))
 
         if hasattr(self._model, "coef_"):
             return dict(zip(self._feature_columns, np.abs(self._model.coef_)))
@@ -248,12 +233,11 @@ class SklearnRegressionModel(DegradationModel):
 
         Returns:
             List of (feature_name, importance) tuples, sorted by importance.
+
         """
         importances = self.feature_importances()
         if importances is None:
             return []
 
-        sorted_features = sorted(
-            importances.items(), key=lambda x: x[1], reverse=True
-        )
+        sorted_features = sorted(importances.items(), key=lambda x: x[1], reverse=True)
         return sorted_features[:n]

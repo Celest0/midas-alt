@@ -12,7 +12,7 @@ from typing import Any
 import pandas as pd
 from pandas import ExcelFile
 
-from .reference_data import FacilityType, SystemType
+from .reference_data import FacilityType, InstallationLocation, SystemType
 from .settings import (
     DegradationSettings,
     MIDASSettings,
@@ -26,30 +26,31 @@ logger = logging.getLogger(__name__)
 
 def _find_column(columns: list[str], candidates: list[str]) -> str | None:
     """Find a column name from a list of possible candidates.
-    
+
     Performs case-insensitive matching and handles whitespace variations.
-    
+
     Args:
         columns: Available column names in the DataFrame.
         candidates: List of possible column names to look for (in order of preference).
-        
+
     Returns:
         The matching column name from columns, or None if not found.
+
     """
     # Normalize column names for comparison
     normalized_columns = {col.lower().replace(" ", "").replace("_", ""): col for col in columns}
-    
+
     for candidate in candidates:
         normalized_candidate = candidate.lower().replace(" ", "").replace("_", "")
         if normalized_candidate in normalized_columns:
             return normalized_columns[normalized_candidate]
-    
+
     return None
 
 
 def _is_numeric(value: str) -> bool:
     """Check if a string can be converted to a number.
-    
+
     Handles integers, floats, and numbers with leading/trailing whitespace.
     """
     try:
@@ -76,6 +77,7 @@ def load_settings_from_excel(path: Path) -> MIDASSettings:
 
     Raises:
         ConfigLoadError: If the file cannot be loaded or is invalid.
+
     """
     if not path.exists():
         raise ConfigLoadError(f"Configuration file not found: {path}")
@@ -88,10 +90,11 @@ def load_settings_from_excel(path: Path) -> MIDASSettings:
     # Load reference data
     facility_types = _load_facility_types(excel_file)
     system_types = _load_system_types(excel_file)
+    locations = _load_install_locations(excel_file)
 
     # Load settings from Config sheet (if present)
     degradation, simulation, output, config_dict = _load_config_values(excel_file)
-    
+
     # Load distributions from config (falls back to defaults if not specified)
     distributions = _load_distributions(config_dict)
 
@@ -102,6 +105,7 @@ def load_settings_from_excel(path: Path) -> MIDASSettings:
         distributions=distributions,
         facility_types=facility_types,
         system_types=system_types,
+        installation_locations=locations
     )
 
 
@@ -124,9 +128,7 @@ def _load_facility_types(excel_file: ExcelFile) -> dict[int, FacilityType]:
                 key=key,
                 title=str(row.get("Title", "")).strip(),
                 life_expectancy=int(row.get("Life Expectancy", 50)),
-                mission_criticality=int(row.get("Mission Criticality", 1))
-                if not pd.isna(row.get("Mission Criticality"))
-                else 1,
+                mission_criticality=int(row.get("Mission Criticality", 1)) if not pd.isna(row.get("Mission Criticality")) else 1,
             )
             facility_types[key] = facility_type
         except (ValueError, TypeError) as e:
@@ -145,13 +147,12 @@ def _load_system_types(excel_file: ExcelFile) -> dict[int, SystemType]:
 
     df = pd.read_excel(excel_file, sheet_name="Systems")
     system_types = {}
-    
+
     # Find the facility keys column (handle various naming conventions)
     facility_keys_column = _find_column(
-        df.columns,
-        ["Facility Key(s)", "Facility Keys", "FacilityKeys", "Facility_Keys", "facility_keys"]
+        df.columns, ["Facility Key(s)", "Facility Keys", "FacilityKeys", "Facility_Keys", "facility_keys"]
     )
-    
+
     if not facility_keys_column:
         logger.warning(
             f"No 'Facility Key(s)' column found in Systems sheet. "
@@ -174,9 +175,7 @@ def _load_system_types(excel_file: ExcelFile) -> dict[int, SystemType]:
             else:
                 # Parse comma-separated string (handle both int and float formats)
                 facility_keys = tuple(
-                    int(float(k.strip()))
-                    for k in str(facility_keys_raw).split(",")
-                    if k.strip() and _is_numeric(k.strip())
+                    int(float(k.strip())) for k in str(facility_keys_raw).split(",") if k.strip() and _is_numeric(k.strip())
                 )
 
             system_type = SystemType(
@@ -193,6 +192,33 @@ def _load_system_types(excel_file: ExcelFile) -> dict[int, SystemType]:
     logger.info(f"Loaded {len(system_types)} system types")
     return system_types
 
+def _load_install_locations(excel_file: ExcelFile) -> list[InstallationLocation]:
+    """Load the Location data from the Installation Locations"""
+    if "Installation Locations" not in excel_file.sheet_names:
+        logger.warning("No 'Installations Locations' sheet found in config file")
+        return []
+
+    df = pd.read_excel(excel_file, sheet_name="Installation Locations")
+    locations = []
+
+    for _, row in df.iterrows():
+        try:
+            title = row.get("Title", "")
+            location = row.get("Location", "")
+            region = row.get("Region", "")
+            coordinates = row.get("Coordinates", "")
+
+
+            locations.append(InstallationLocation(
+                title=title,
+                location=location,
+                region=region,
+                coordinates= coordinates
+            ))
+        except Exception as e:
+            logger.warning(f"Unable to parse Installation Location: {e}")
+    logger.info(f"Loaded {len(locations)} Installation Locations")
+    return locations
 
 # Mapping from human-readable Excel parameter names to internal setting keys
 PARAMETER_KEY_MAP: dict[str, str] = {
@@ -223,7 +249,7 @@ PARAMETER_KEY_MAP: dict[str, str] = {
 
 def _normalize_parameter_key(param: str) -> str:
     """Normalize a parameter name to a lookup key.
-    
+
     Handles both human-readable names (from Excel Parameter column) and
     internal snake_case names (from Key/Setting column).
     """
@@ -239,10 +265,11 @@ def _load_config_values(
     excel_file: ExcelFile,
 ) -> tuple[DegradationSettings, SimulationSettings, OutputSettings, dict[str, Any]]:
     """Load configuration values from Config sheet.
-    
+
     Returns:
         Tuple of (DegradationSettings, SimulationSettings, OutputSettings, raw_config_dict)
         The raw config dict is returned for additional parsing (e.g., distributions).
+
     """
     # Return defaults if no Config sheet
     if "Config" not in excel_file.sheet_names:
@@ -260,65 +287,39 @@ def _load_config_values(
         value = row.get("Value")
         if pd.isna(value):
             value = row.get("Default")
-        
+
         if not pd.isna(param) and not pd.isna(value):
             key = _normalize_parameter_key(param)
             config_dict[key] = value
 
     # Parse degradation settings
     degradation = DegradationSettings(
-        condition_index_degraded_threshold=float(
-            config_dict.get("condition_index_degraded_threshold", 25.0)
-        ),
-        resiliency_grade_threshold=int(
-            config_dict.get("resiliency_grade_threshold", 70)
-        ),
-        initial_condition_index=float(
-            config_dict.get("initial_condition_index", 99.99)
-        ),
-        max_time_series_years=int(
-            config_dict.get("max_time_series_years", 10)
-        ),
+        condition_index_degraded_threshold=float(config_dict.get("condition_index_degraded_threshold", 25.0)),
+        resiliency_grade_threshold=int(config_dict.get("resiliency_grade_threshold", 70)),
+        initial_condition_index=float(config_dict.get("initial_condition_index", 99.99)),
+        max_time_series_years=int(config_dict.get("max_time_series_years", 10)),
     )
 
     # Parse simulation settings
-    facilities_range = _parse_range(
-        config_dict.get("facilities_per_installation", "8-14")
-    )
-    dep_chain_range = _parse_range(
-        config_dict.get("dependency_chain_group_range", "1-3")
-    )
+    facilities_range = _parse_range(config_dict.get("facilities_per_installation", "8-14"))
+    dep_chain_range = _parse_range(config_dict.get("dependency_chain_group_range", "1-3"))
 
     simulation = SimulationSettings(
         facilities_per_installation=facilities_range,
         dependency_chain_group_range=dep_chain_range,
         maximum_system_age=int(config_dict.get("maximum_system_age", 80)),
         maximum_facility_age=int(config_dict.get("maximum_facility_age", 80)),
-        facility_condition_randomly_degrades_chance=int(
-            config_dict.get("facility_condition_randomly_degrades_chance", 35)
-        ),
+        facility_condition_randomly_degrades_chance=int(config_dict.get("facility_condition_randomly_degrades_chance", 35)),
     )
 
     # Parse output settings
     output = OutputSettings(
-        excel_sheet_main=str(
-            config_dict.get("excel_sheet_main", "Main Data")
-        ).strip(),
-        excel_sheet_facility_ts=str(
-            config_dict.get("excel_sheet_facility_ts", "Facility Time Series")
-        ).strip(),
-        excel_sheet_system_ts=str(
-            config_dict.get("excel_sheet_system_ts", "System Time Series")
-        ).strip(),
-        excel_sheet_metadata=str(
-            config_dict.get("excel_sheet_metadata", "_metadata")
-        ).strip(),
-        metadata_file_suffix=str(
-            config_dict.get("metadata_file_suffix", "_metadata.json")
-        ).strip(),
-        csv_table_separator=str(
-            config_dict.get("csv_table_separator", "_")
-        ).strip(),
+        excel_sheet_main=str(config_dict.get("excel_sheet_main", "Main Data")).strip(),
+        excel_sheet_facility_ts=str(config_dict.get("excel_sheet_facility_ts", "Facility Time Series")).strip(),
+        excel_sheet_system_ts=str(config_dict.get("excel_sheet_system_ts", "System Time Series")).strip(),
+        excel_sheet_metadata=str(config_dict.get("excel_sheet_metadata", "_metadata")).strip(),
+        metadata_file_suffix=str(config_dict.get("metadata_file_suffix", "_metadata.json")).strip(),
+        csv_table_separator=str(config_dict.get("csv_table_separator", "_")).strip(),
     )
 
     return degradation, simulation, output, config_dict
@@ -326,98 +327,93 @@ def _load_config_values(
 
 def _parse_distribution_string(value: str) -> list[tuple[int, str]] | None:
     """Parse a distribution string from Excel into (percentage, value_range) tuples.
-    
+
     Supports formats like:
         - "1: (7: 1-50)\\n2: (88: 50-85)\\n3: (5: 85-100)"
         - "1: (50, 20-40)\\n2: (20, 10-20)"
         - "G1: 52\\nG2: 32\\nG3: 12\\nG4: 4"
-    
+
     Returns:
         List of (percentage, value_string) tuples, or None if parsing fails.
+
     """
     if not value or pd.isna(value):
         return None
-    
+
     value_str = str(value).strip()
     segments: list[tuple[int, str]] = []
-    
+
     # Split by newline or numbered segments
-    lines = re.split(r'\n|(?=\d+:\s*\()', value_str)
-    
+    lines = re.split(r"\n|(?=\d+:\s*\()", value_str)
+
     for line in lines:
         line = line.strip()
         if not line:
             continue
-        
+
         # Pattern 1: "N: (percentage, range)" or "N: (percentage: range)"
         # e.g., "1: (7: 1-50)" or "1: (50, 20-40)"
-        match = re.match(r'(?:\d+:\s*)?\(?\s*(\d+)\s*[,:]\s*([\d\-]+)\s*\)?', line)
+        match = re.match(r"(?:\d+:\s*)?\(?\s*(\d+)\s*[,:]\s*([\d\-]+)\s*\)?", line)
         if match:
             percentage = int(match.group(1))
             value_range = match.group(2).strip()
             segments.append((percentage, value_range))
             continue
-        
+
         # Pattern 2: "GN: percentage" for grade distributions
         # e.g., "G1: 52"
-        match = re.match(r'G(\d+)\s*:\s*(\d+)', line)
+        match = re.match(r"G(\d+)\s*:\s*(\d+)", line)
         if match:
             grade = match.group(1)
             percentage = int(match.group(2))
             segments.append((percentage, grade))
             continue
-    
+
     return segments if segments else None
 
 
 def _load_distributions(config_dict: dict[str, Any]) -> SimulationDistributions:
     """Load probability distributions from config dictionary.
-    
+
     Parses distribution strings from the config and creates ProbabilityDistribution
     objects. Falls back to defaults if parsing fails or values are not provided.
     """
     from ..simulation.distributions import ProbabilityDistribution, ProbabilitySegment
-    
+
     condition_index = None
     age = None
     grade = None
-    
+
     # Parse condition index distribution
     ci_str = config_dict.get("condition_index_distribution")
     if ci_str:
         segments = _parse_distribution_string(ci_str)
         if segments:
             try:
-                condition_index = ProbabilityDistribution([
-                    ProbabilitySegment(pct, val) for pct, val in segments
-                ])
+                condition_index = ProbabilityDistribution([ProbabilitySegment(pct, val) for pct, val in segments])
             except (ValueError, TypeError) as e:
                 logger.warning(f"Failed to parse condition index distribution: {e}")
-    
+
     # Parse age distribution
     age_str = config_dict.get("age_distribution")
     if age_str:
         segments = _parse_distribution_string(age_str)
         if segments:
             try:
-                age = ProbabilityDistribution([
-                    ProbabilitySegment(pct, val) for pct, val in segments
-                ])
+                age = ProbabilityDistribution([ProbabilitySegment(pct, val) for pct, val in segments])
             except (ValueError, TypeError) as e:
                 logger.warning(f"Failed to parse age distribution: {e}")
-    
+
     # Parse grade distribution
     grade_str = config_dict.get("grade_distribution")
     if grade_str:
         segments = _parse_distribution_string(grade_str)
         if segments:
             try:
-                grade = ProbabilityDistribution([
-                    ProbabilitySegment(pct, val) for pct, val in segments
-                ])
+                grade = ProbabilityDistribution([ProbabilitySegment(pct, val) for pct, val in segments])
             except (ValueError, TypeError) as e:
                 logger.warning(f"Failed to parse grade distribution: {e}")
-    
+
     # Create distributions - None values will use defaults from __post_init__
     return SimulationDistributions(
         condition_index=condition_index,

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .reference_data import FacilityType, SystemType
+from .reference_data import FacilityType, InstallationLocation, SystemType
 
 if TYPE_CHECKING:
     from ..simulation.distributions import ProbabilityDistribution
@@ -29,6 +29,7 @@ class SimulationSettings:
 
     facilities_per_installation: tuple[int, int] = (8, 14)
     dependency_chain_group_range: tuple[int, int] = (1, 3)
+    max_vertical_depth: int = 3  # How many vertical levels (e.g. 3 = A/B/C, 5 = A-E)
     maximum_system_age: int = 80
     maximum_facility_age: int = 80
     facility_condition_randomly_degrades_chance: int = 35
@@ -50,41 +51,59 @@ class OutputSettings:
 @dataclass
 class SimulationDistributions:
     """Probability distributions for simulation data generation.
-    
+
     These distributions control how random values are generated for
     condition indices, ages, and resiliency grades.
     """
-    
+
     condition_index: "ProbabilityDistribution | None" = None
     age: "ProbabilityDistribution | None" = None
     grade: "ProbabilityDistribution | None" = None
-    
+
     def __post_init__(self) -> None:
         """Initialize default distributions if not provided."""
         from ..simulation.distributions import ProbabilityDistribution, ProbabilitySegment
-        
+
         if self.condition_index is None:
-            object.__setattr__(self, 'condition_index', ProbabilityDistribution([
-                ProbabilitySegment(7, "1-50"),
-                ProbabilitySegment(88, "50-85"),
-                ProbabilitySegment(5, "85-100"),
-            ]))
-        
+            object.__setattr__(
+                self,
+                "condition_index",
+                ProbabilityDistribution(
+                    [
+                        ProbabilitySegment(7, "1-50"),
+                        ProbabilitySegment(88, "50-85"),
+                        ProbabilitySegment(5, "85-100"),
+                    ]
+                ),
+            )
+
         if self.age is None:
-            object.__setattr__(self, 'age', ProbabilityDistribution([
-                ProbabilitySegment(50, "20-40"),
-                ProbabilitySegment(20, "10-20"),
-                ProbabilitySegment(20, "41-80"),
-                ProbabilitySegment(10, "0-9"),
-            ]))
-        
+            object.__setattr__(
+                self,
+                "age",
+                ProbabilityDistribution(
+                    [
+                        ProbabilitySegment(50, "20-40"),
+                        ProbabilitySegment(20, "10-20"),
+                        ProbabilitySegment(20, "41-80"),
+                        ProbabilitySegment(10, "0-9"),
+                    ]
+                ),
+            )
+
         if self.grade is None:
-            object.__setattr__(self, 'grade', ProbabilityDistribution([
-                ProbabilitySegment(52, "1"),
-                ProbabilitySegment(32, "2"),
-                ProbabilitySegment(12, "3"),
-                ProbabilitySegment(4, "4"),
-            ]))
+            object.__setattr__(
+                self,
+                "grade",
+                ProbabilityDistribution(
+                    [
+                        ProbabilitySegment(52, "1"),
+                        ProbabilitySegment(32, "2"),
+                        ProbabilitySegment(12, "3"),
+                        ProbabilitySegment(4, "4"),
+                    ]
+                ),
+            )
 
 
 @dataclass
@@ -103,6 +122,7 @@ class MIDASSettings:
     # Reference data (loaded from Excel)
     facility_types: dict[int, FacilityType] = field(default_factory=dict)
     system_types: dict[int, SystemType] = field(default_factory=dict)
+    installation_locations: list[InstallationLocation] = field(default_factory=list)
 
     def get_facility_type(self, key: int) -> FacilityType | None:
         """Get facility type by key."""
@@ -115,6 +135,7 @@ class MIDASSettings:
     def get_random_facility_type(self, excluded_keys: list[int] | None = None) -> FacilityType | None:
         """Get a random facility type, optionally excluding certain keys."""
         import random
+
         excluded = excluded_keys or []
         available = [ft for ft in self.facility_types.values() if ft.key not in excluded]
         return random.choice(available) if available else None
@@ -122,14 +143,13 @@ class MIDASSettings:
     def get_random_system_type_for_facility(self, facility_key: int) -> "SystemType | None":
         """Get a random system type that belongs to the given facility type."""
         import random
+
         system_types = self.get_system_types_for_facility(facility_key)
         return random.choice(system_types) if system_types else None
 
     def get_system_types_for_facility(self, facility_key: int) -> list[SystemType]:
         """Get all system types that belong to a facility type."""
-        return [
-            st for st in self.system_types.values() if facility_key in st.facility_keys
-        ]
+        return [st for st in self.system_types.values() if facility_key in st.facility_keys]
 
     @classmethod
     def with_defaults(cls) -> "MIDASSettings":
@@ -145,11 +165,12 @@ class MIDASSettings:
 
         Returns:
             Configured MIDASSettings instance.
+
         """
         from .loader import load_settings_from_excel
 
         return load_settings_from_excel(path)
-    
+
     @classmethod
     def default_config_path(cls) -> Path:
         """Get the default configuration file path."""

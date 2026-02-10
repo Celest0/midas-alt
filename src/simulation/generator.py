@@ -126,10 +126,22 @@ class DataGenerator:
             Tuple of (installation, facilities, systems).
 
         """
-        installation = Installation(
-            id=str(uuid4()),
-            title=f"SIM_INSTALL_{str(uuid4())[:8]}",
-        )
+        # Pick a random installation location for realistic attributes
+        locations = self.settings.installation_locations
+        if locations:
+            loc = random.choice(locations)
+            installation = Installation(
+                id=str(uuid4()),
+                title=loc.title,
+                location=loc.location,
+                region=loc.region,
+                coordinates=loc.coordinates,
+            )
+        else:
+            installation = Installation(
+                id=str(uuid4()),
+                title=f"SIM_INSTALL_{str(uuid4())[:8]}",
+            )
 
         # Generate facilities
         facility_count = random.randint(*self.config.facilities_per_installation)

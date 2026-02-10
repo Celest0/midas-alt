@@ -72,6 +72,9 @@ class DataTransformer:
                 {
                     "id": install.id,
                     "title": install.title,
+                    "location": install.location,
+                    "region": install.region,
+                    "coordinates": install.coordinates,
                     "condition_index": install.condition_index,
                     "facility_count": len(install.facility_ids),
                 }
@@ -166,6 +169,9 @@ class DataTransformer:
             row = {
                 "installation_id": install.id,
                 "installation_title": install.title,
+                "installation_location": install.location,
+                "installation_region": install.region,
+                "installation_coordinates": install.coordinates,
                 "installation_condition_index": install.condition_index,
                 "facility_id": facility.id,
                 "facility_type_key": facility.facility_type_key,
@@ -221,6 +227,9 @@ class DataTransformer:
             install_data = {
                 "id": install.id,
                 "title": install.title,
+                "location": install.location,
+                "region": install.region,
+                "coordinates": install.coordinates,
                 "condition_index": install.condition_index,
                 "facilities": [],
             }

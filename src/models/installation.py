@@ -12,6 +12,9 @@ class Installation:
 
     id: str = field(default_factory=generate_id)
     title: str = ""
+    location: str = ""
+    region: str = ""
+    coordinates: str = ""
 
     # Child references (IDs only)
     facility_ids: list[str] = field(default_factory=list)

@@ -40,9 +40,7 @@ class DisplayHelper:
             content = "\n".join(content)
 
         # Extract the renderable content from the config panel
-        config_content = getattr(config_summary, "_renderable", None) or getattr(
-            config_summary, "renderable", config_summary
-        )
+        config_content = getattr(config_summary, "_renderable", None) or getattr(config_summary, "renderable", config_summary)
 
         # Create a Group with the text content and config content
         combined_content = Group(

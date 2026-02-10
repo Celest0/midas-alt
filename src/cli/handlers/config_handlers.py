@@ -5,10 +5,11 @@ import logging
 from rich.prompt import Confirm
 
 from src.cli.utils import DisplayHelper, InputHelper
-from src.config.app_state import get_app_state, set_app_state, ApplicationState
+from src.config.app_state import ApplicationState, get_app_state, set_app_state
 from src.config.display import (
     create_config_values_panel,
     create_facility_types_table,
+    create_installation_locations_table,
     create_system_types_table,
 )
 
@@ -34,7 +35,7 @@ def handle_reload_configuration() -> None:
 
             # Display status
             status_message = new_state.get_status_message()
-            
+
             if new_state.initialized_successfully:
                 DisplayHelper.print_success(status_message)
             else:
@@ -66,19 +67,28 @@ def handle_view_system_types_summary() -> None:
     InputHelper.wait_for_continue()
 
 
+def handle_view_installation_locations_summary() -> None:
+    """View installation locations summary."""
+    state = get_app_state()
+    table = create_installation_locations_table(state.settings)
+    DisplayHelper.print_table(table)
+    InputHelper.wait_for_continue()
+
+
 def handle_view_config_values() -> None:
     """View config values summary."""
     from rich.console import Console
+
     console = Console()
-    
+
     console.print("\n")
     console.print("Config data contains values read on initialization (or subsequent reload)")
     console.print("These are various values used to set parameters in the MIDAS application")
     console.print("They can be changed in the 'midas_config_values.xlsx' spreadsheet.")
     console.print("\n")
-    
+
     state = get_app_state()
     panel = create_config_values_panel(state.settings)
     console.print(panel)
-    
+
     InputHelper.wait_for_continue()

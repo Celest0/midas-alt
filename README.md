@@ -1,21 +1,18 @@
 # MIDAS
 
-MIDAS (**M**ission **I**nfrastructure **D**egradation **A**nalysis **S**ystem) is a Python application for simulating and managing installation, facility, and system data. It provides a menu-based CLI interface for generating simulated data, viewing configurations, and training ML models to predict infrastructure degradation.
+MIDAS (**M**ission **I**nfrastructure **D**egradation **A**nalysis **S**imulation) is a Python application for simulating and managing installation, facility, and system data. It provides a menu-based CLI interface for generating simulated data, viewing configurations, and training ML models to predict infrastructure degradation.
 
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
 - [Getting Started](#getting-started)
 - [Architecture Overview](#architecture-overview)
-- [Domain Model](#domain-model)
 - [Configuration System](#configuration-system)
 - [CLI System](#cli-system)
 - [Simulation Engine](#simulation-engine)
-- [ML Prediction Module](#ml-prediction-module)
 - [API Patterns & Conventions](#api-patterns--conventions)
 - [Project Structure](#project-structure)
 - [Development Workflow](#development-workflow)
-- [Examples](#examples)
 
 ---
 
@@ -101,10 +98,7 @@ MIDAS follows a clean, modular architecture with clear separation of concerns:
 │  (Entities: Installation, Facility, System)  │
 └──────────────────────────────────────────────┘
 ```
-
-## Domain Model
-
-The domain model represents infrastructure assets in a three-level hierarchy:
+## Core Models and Structure
 
 ### Installation
 
@@ -151,13 +145,13 @@ class System:
 
 ### Dependency Chains
 
-Facilities are organized into dependency hierarchies:
+Facilities are organized into dependency hierarchies using a flexible letter-based vertical position system:
 
-- **PRIMARY (P)**: Top-level facilities with no dependencies
-- **SECONDARY (S)**: Mid-level, depends on Primary
-- **TERTIARY (T)**: Bottom-level, depends on Secondary or Primary
+- **Vertical position**: A single letter `A`–`Z`, where `A` is the top of the hierarchy and each subsequent letter represents a deeper dependency level.
+- **Group IDs**: Any combination of digits `1`–`9`, each representing membership in one of 9 possible groups. Entities sharing a group ID within the same hierarchy are considered related.
+- **Hierarchy rule**: An entity at a given position (e.g., `B`) depends on entities above it (e.g., `A`) that share at least one group ID.
 
-Position format: `{tier}{group_ids}` (e.g., "P12" = Primary, groups 1 and 2)
+Position format: `{vertical_position}{group_ids}` (e.g., `"A1"` = top-level, group 1; `"B23"` = second level, groups 2 and 3)
 
 ### UFC Resiliency Grades
 
@@ -373,150 +367,6 @@ file_path = exporter.generate_and_export(
 
 ---
 
-## ML Prediction Module
-
-The prediction module provides a complete pipeline for training and using degradation prediction models.
-
-### Feature Extraction
-
-Extract ML features from domain entities:
-
-```python
-from src.prediction import FeatureExtractor, DegradationFeatures
-
-extractor = FeatureExtractor(settings)
-
-# Extract from facility
-features = extractor.extract_facility_features(facility)
-
-# Extract from system (with facility context)
-features = extractor.extract_system_features(system, parent_facility)
-
-# Batch extraction to DataFrame
-df = extractor.extract_batch(entities)
-```
-
-### Feature Set
-
-| Feature                  | Description                        |
-|--------------------------|------------------------------------|
-| `condition_index`        | Current CI (0-100)                 |
-| `age_months`             | Entity age in months               |
-| `life_expectancy_months` | Expected lifespan                  |
-| `facility_type_key`      | Facility type identifier           |
-| `system_type_key`        | System type identifier             |
-| `mission_criticality`    | Mission importance (1-5)           |
-| `resiliency_grade`       | UFC grade (1-4)                    |
-| `dependency_tier`        | P, S, or T                         |
-| `remaining_life_ratio`   | age / life_expectancy              |
-| `condition_age_ratio`    | CI relative to expected CI for age |
-
-### Training Dataset Generation
-
-Generate labeled datasets for model training:
-
-```python
-from src.prediction import TrainingDataGenerator, DatasetConfig, LabelType
-
-config = DatasetConfig(
-    n_installations=100,
-    label_type=LabelType.MONTHS_TO_DEGRADATION,
-    degradation_threshold=25.0,
-    seed=42,
-)
-
-generator = TrainingDataGenerator(settings=settings, config=config)
-
-# Generate facility dataset
-X, y = generator.generate_facility_dataset()
-
-# Generate system dataset
-X, y = generator.generate_system_dataset()
-
-# Generate combined dataset
-X, y = generator.generate()
-```
-
-### Label Types
-
-| Label Type              | Description                                    |
-|-------------------------|------------------------------------------------|
-| `MONTHS_TO_DEGRADATION` | Regression: months until CI < threshold        |
-| `DEGRADATION_RATE`      | Regression: monthly CI loss rate               |
-| `WILL_DEGRADE_6MO`      | Classification: binary (degrade in 6 months?)  |
-| `WILL_DEGRADE_12MO`     | Classification: binary (degrade in 12 months?) |
-| `WILL_DEGRADE_24MO`     | Classification: binary (degrade in 24 months?) |
-
-### Prediction Models
-
-MIDAS provides multiple model implementations:
-
-```python
-from src.prediction import (
-    ExponentialDecayModel,
-    SklearnRegressionModel,
-)
-
-# Analytical model (no training required)
-decay_model = ExponentialDecayModel(degradation_threshold=25.0)
-
-# Sklearn-based models
-ridge_model = SklearnRegressionModel("ridge")
-rf_model = SklearnRegressionModel("random_forest", n_estimators=100)
-gb_model = SklearnRegressionModel("gradient_boosting")
-
-# Train a model
-rf_model.fit(X_train, y_train)
-
-# Make predictions
-predictions = rf_model.predict(X_test)
-
-# Predictions with uncertainty (confidence intervals)
-predictions_with_ci = rf_model.predict_with_uncertainty(X_test, confidence=0.8)
-for pred in predictions_with_ci:
-    print(f"{pred.months_to_degradation:.1f} months "
-          f"({pred.confidence_low:.1f} - {pred.confidence_high:.1f})")
-```
-
-### Model Evaluation
-
-Compare multiple models:
-
-```python
-from src.prediction import ModelEvaluator
-
-models = [
-    ExponentialDecayModel(),
-    SklearnRegressionModel("ridge"),
-    SklearnRegressionModel("random_forest"),
-]
-
-evaluator = ModelEvaluator(test_size=0.2, random_state=42)
-results_df = evaluator.compare_models(models, X, y)
-
-# Results include: MAE, RMSE, R2, within_6mo accuracy, within_12mo accuracy
-print(results_df)
-```
-
-### Feature Importance
-
-For tree-based models, access feature importances:
-
-```python
-rf_model = SklearnRegressionModel("random_forest")
-rf_model.fit(X, y)
-
-# Get all importances
-importances = rf_model.feature_importances()
-
-# Get top N features
-top_features = rf_model.get_top_features(n=10)
-for feature, importance in top_features:
-    print(f"{feature}: {importance:.4f}")
-```
-
----
-
 ## API Patterns & Conventions
 
 ### Dependency Injection
@@ -683,84 +533,6 @@ The project uses `pyproject.toml` for all configuration:
 
 - **Ruff**: Linting rules (pycodestyle, pyflakes, isort, etc.)
 - **Pytest**: Test configuration with coverage
-
----
-
-## Examples
-
-### Run the ML Demo
-
-```bash
-uv run python examples/ml_prediction_demo.py
-```
-
-This demonstrates the complete ML pipeline:
-1. Loading configuration
-2. Generating training data
-3. Training multiple models
-4. Comparing model performance
-5. Making predictions with uncertainty
-
-### Programmatic Data Generation
-
-```python
-from src.config import MIDASSettings
-from src.simulation import DataGenerator, DataExporter
-
-# Load settings
-settings = MIDASSettings.from_excel("src/config/midas_config_values.xlsx")
-
-# Generate data
-generator = DataGenerator(settings=settings, seed=42)
-installation, facilities, systems = generator.generate_installation()
-
-print(f"Generated {len(facilities)} facilities with {len(systems)} systems")
-
-# Export to CSV
-exporter = DataExporter(
-    file_name="my_data",
-    output_format="csv",
-    settings=settings,
-)
-path = exporter.generate_and_export(method="default")
-print(f"Exported to: {path}")
-```
-
-### Training a Custom Model
-
-```python
-from src.config import MIDASSettings
-from src.prediction import (
-    DatasetConfig,
-    LabelType,
-    SklearnRegressionModel,
-    TrainingDataGenerator,
-)
-
-settings = MIDASSettings.from_excel("src/config/midas_config_values.xlsx")
-
-# Configure and generate dataset
-config = DatasetConfig(
-    n_installations=200,
-    label_type=LabelType.MONTHS_TO_DEGRADATION,
-    seed=42,
-)
-gen = TrainingDataGenerator(settings=settings, config=config)
-X, y = gen.generate_facility_dataset()
-
-# Train model
-model = SklearnRegressionModel("random_forest", n_estimators=100)
-model.fit(X, y)
-
-# Evaluate
-metrics = model.score(X, y)
-print(f"MAE: {metrics['mae']:.2f} months")
-print(f"R2: {metrics['r2']:.4f}")
-
-# Feature importance
-for feature, importance in model.get_top_features(5):
-    print(f"  {feature}: {importance:.4f}")
-```
 
 ---
 

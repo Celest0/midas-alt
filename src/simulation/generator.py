@@ -5,13 +5,15 @@ for use in training ML models and testing the application.
 """
 
 import random
+import string
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from uuid import uuid4
 
 from ..config.settings import MIDASSettings
-from ..domain import DependencyChain, DependencyTier, Facility, Installation, System, UFCGrade
+from ..enums import UFCGrade
+from ..models import DependencyPosition, Facility, Installation, System
 
 
 class DegradationPattern(Enum):
@@ -43,6 +45,7 @@ class SimulationConfig:
     # Range settings
     facilities_per_installation: tuple[int, int] = (8, 14)
     dependency_group_range: tuple[int, int] = (1, 3)
+    max_vertical_depth: int = 3  # Number of vertical levels (e.g. 3 = A/B/C)
     max_facility_age: int = 80
     max_system_age: int = 80
 
@@ -73,12 +76,21 @@ class SimulationConfig:
         ]
     )
 
+    @property
+    def vertical_positions(self) -> list[str]:
+        """Return the list of vertical position letters for this config.
+
+        E.g. max_vertical_depth=3 -> ["A", "B", "C"]
+        """
+        return list(string.ascii_uppercase[: self.max_vertical_depth])
+
     @classmethod
     def from_settings(cls, settings: MIDASSettings) -> "SimulationConfig":
         """Create SimulationConfig from MIDASSettings."""
         return cls(
             facilities_per_installation=settings.simulation.facilities_per_installation,
             dependency_group_range=settings.simulation.dependency_chain_group_range,
+            max_vertical_depth=settings.simulation.max_vertical_depth,
             max_facility_age=settings.simulation.maximum_facility_age,
             max_system_age=settings.simulation.maximum_system_age,
         )
@@ -99,6 +111,7 @@ class DataGenerator:
             settings: Application settings (for reference data lookup).
             config: Simulation configuration. If None, uses defaults.
             seed: Random seed for reproducibility.
+
         """
         self.settings = settings or MIDASSettings.with_defaults()
         self.config = config or SimulationConfig.from_settings(self.settings)
@@ -111,6 +124,7 @@ class DataGenerator:
 
         Returns:
             Tuple of (installation, facilities, systems).
+
         """
         installation = Installation(
             id=str(uuid4()),
@@ -119,9 +133,7 @@ class DataGenerator:
 
         # Generate facilities
         facility_count = random.randint(*self.config.facilities_per_installation)
-        facilities, all_systems = self._generate_facilities(
-            installation.id, facility_count
-        )
+        facilities, all_systems = self._generate_facilities(installation.id, facility_count)
 
         # Update installation with facility IDs
         installation.facility_ids = [f.id for f in facilities]
@@ -136,9 +148,7 @@ class DataGenerator:
 
         return installation, facilities, all_systems
 
-    def generate_installations(
-        self, count: int
-    ) -> tuple[list[Installation], list[Facility], list[System]]:
+    def generate_installations(self, count: int) -> tuple[list[Installation], list[Facility], list[System]]:
         """Generate multiple installations.
 
         Args:
@@ -146,6 +156,7 @@ class DataGenerator:
 
         Returns:
             Tuple of (installations, all_facilities, all_systems).
+
         """
         all_installations = []
         all_facilities = []
@@ -159,16 +170,14 @@ class DataGenerator:
 
         return all_installations, all_facilities, all_systems
 
-    def _generate_facilities(
-        self, installation_id: str, count: int
-    ) -> tuple[list[Facility], list[System]]:
+    def _generate_facilities(self, installation_id: str, count: int) -> tuple[list[Facility], list[System]]:
         """Generate facilities for an installation."""
         facilities = []
         all_systems = []
         used_facility_type_keys: list[int] = []
 
-        # Generate dependency chains
-        dependency_chains = self._generate_dependency_chains(count)
+        # Generate dependency positions
+        dependency_chains = self._generate_dependency_positions(count)
 
         # Get available facility types
         available_types = list(self.settings.facility_types.keys())
@@ -176,9 +185,7 @@ class DataGenerator:
         for i in range(count):
             # Select facility type (prefer unused)
             if available_types:
-                available_for_selection = [
-                    k for k in available_types if k not in used_facility_type_keys
-                ]
+                available_for_selection = [k for k in available_types if k not in used_facility_type_keys]
                 if not available_for_selection:
                     available_for_selection = available_types
                 facility_type_key = random.choice(available_for_selection)
@@ -190,10 +197,8 @@ class DataGenerator:
             facility = Facility(
                 id=str(uuid4()),
                 facility_type_key=facility_type_key,
-                year_constructed=self._sample_year_constructed(
-                    self.config.max_facility_age
-                ),
-                dependency_chain=dependency_chains[i] if i < len(dependency_chains) else DependencyChain(),
+                year_constructed=self._sample_year_constructed(self.config.max_facility_age),
+                dependency_position=dependency_chains[i] if i < len(dependency_chains) else DependencyPosition(vertical_position="A", group_ids=[1]),
                 installation_id=installation_id,
             )
 
@@ -216,9 +221,7 @@ class DataGenerator:
         systems = []
 
         # Get system types for this facility
-        system_types = self.settings.get_system_types_for_facility(
-            facility.facility_type_key or 0
-        )
+        system_types = self.settings.get_system_types_for_facility(facility.facility_type_key or 0)
 
         # If no system types defined, generate random systems
         if not system_types:
@@ -227,9 +230,7 @@ class DataGenerator:
                 system = System(
                     id=str(uuid4()),
                     system_type_key=i + 1,
-                    year_constructed=self._sample_year_constructed(
-                        self.config.max_system_age
-                    ),
+                    year_constructed=self._sample_year_constructed(self.config.max_system_age),
                     condition_index=self._sample_condition_index(),
                     facility_id=facility.id,
                 )
@@ -240,9 +241,7 @@ class DataGenerator:
                 system = System(
                     id=str(uuid4()),
                     system_type_key=system_type.key,
-                    year_constructed=self._sample_year_constructed(
-                        self.config.max_system_age
-                    ),
+                    year_constructed=self._sample_year_constructed(self.config.max_system_age),
                     condition_index=self._sample_condition_index(),
                     facility_id=facility.id,
                 )
@@ -250,19 +249,26 @@ class DataGenerator:
 
         return systems
 
-    def _generate_dependency_chains(self, count: int) -> list[DependencyChain]:
-        """Generate valid dependency chains for a set of facilities."""
+    def _generate_dependency_positions(self, count: int) -> list[DependencyPosition]:
+        """Generate valid dependency positions for a set of facilities.
+
+        Positions use vertical letters from the configured depth (e.g. A/B/C for
+        depth=3, A-E for depth=5). "A" is the top of the hierarchy and each
+        subsequent letter represents a deeper dependency level.
+        """
         if count == 0:
             return []
 
-        if count == 1:
-            return [DependencyChain(tier=DependencyTier.PRIMARY, group_ids=[1])]
+        positions_letters = self.config.vertical_positions  # e.g. ["A", "B", "C"]
 
-        chains = []
+        if count == 1:
+            return [DependencyPosition(vertical_position="A", group_ids=[1])]
+
+        positions = []
         group_range = self.config.dependency_group_range
 
         for _ in range(count):
-            tier = random.choice(list(DependencyTier))
+            vertical = random.choice(positions_letters)
             group_count = random.randint(*group_range)
             group_ids = sorted(
                 random.sample(
@@ -270,116 +276,117 @@ class DataGenerator:
                     min(group_count, group_range[1] - group_range[0] + 1),
                 )
             )
-            chains.append(DependencyChain(tier=tier, group_ids=group_ids))
+            positions.append(DependencyPosition(vertical_position=vertical, group_ids=group_ids))
 
-        # Validate and fix chains
-        return self._validate_dependency_chains(chains)
+        # Validate and fix positions
+        return self._validate_dependency_positions(positions)
 
-    def _validate_dependency_chains(
-        self, chains: list[DependencyChain]
-    ) -> list[DependencyChain]:
-        """Ensure dependency chains form valid hierarchies."""
-        # Count tiers per group
+    def _validate_dependency_positions(self, positions: list[DependencyPosition]) -> list[DependencyPosition]:
+        """Ensure dependency positions form valid hierarchies.
+
+        Any position deeper than "A" must have at least one entity above it
+        (at any higher level) in the same group. If not, elevate it to "A".
+        """
         from collections import defaultdict
 
         for _ in range(10):  # Max iterations to prevent infinite loop
-            group_tiers = defaultdict(lambda: {"P": 0, "S": 0, "T": 0})
-
-            for chain in chains:
-                if chain.tier:
-                    for gid in chain.group_ids:
-                        group_tiers[gid][chain.tier.value] += 1
+            # Build a map: group_id -> set of vertical positions present
+            group_levels: dict[int, set[str]] = defaultdict(set)
+            for pos in positions:
+                for gid in pos.group_ids:
+                    group_levels[gid].add(pos.vertical_position)
 
             fixed = True
-            new_chains = []
+            new_positions = []
 
-            for chain in chains:
-                if chain.tier is None:
-                    new_chains.append(chain)
+            for pos in positions:
+                if pos.vertical_position == "A":
+                    # Top level always valid
+                    new_positions.append(pos)
                     continue
 
-                needs_fix = False
+                # Check if any group has a level above this position
+                has_support = False
+                for gid in pos.group_ids:
+                    levels_in_group = group_levels[gid]
+                    # Check for any letter above (earlier in alphabet)
+                    for level in levels_in_group:
+                        if level < pos.vertical_position:
+                            has_support = True
+                            break
+                    if has_support:
+                        break
 
-                # Check for floaters (S or T with no support)
-                if chain.tier in [DependencyTier.SECONDARY, DependencyTier.TERTIARY]:
-                    has_support = False
-                    for gid in chain.group_ids:
-                        if chain.tier == DependencyTier.SECONDARY:
-                            if group_tiers[gid]["P"] > 0:
-                                has_support = True
-                                break
-                        elif chain.tier == DependencyTier.TERTIARY:
-                            if group_tiers[gid]["P"] > 0 or group_tiers[gid]["S"] > 0:
-                                has_support = True
-                                break
-
-                    if not has_support:
-                        # Elevate to Primary
-                        new_chains.append(
-                            DependencyChain(
-                                tier=DependencyTier.PRIMARY,
-                                group_ids=[chain.group_ids[0]] if chain.group_ids else [1],
-                            )
+                if has_support:
+                    new_positions.append(pos)
+                else:
+                    # No support — elevate to "A"
+                    new_positions.append(
+                        DependencyPosition(
+                            vertical_position="A",
+                            group_ids=[pos.group_ids[0]] if pos.group_ids else [1],
                         )
-                        fixed = False
-                        needs_fix = True
+                    )
+                    fixed = False
 
-                if not needs_fix:
-                    new_chains.append(chain)
-
-            chains = new_chains
+            positions = new_positions
 
             if fixed:
                 break
 
-        return chains
+        return positions
 
     def _assign_resiliency_grades(self, facilities: list[Facility]) -> None:
-        """Assign resiliency grades based on dependency relationships."""
-        # Group by tier
-        by_tier = {tier: [] for tier in DependencyTier}
+        """Assign resiliency grades based on dependency relationships.
+
+        Works bottom-up: the deepest level gets random grades, and each level
+        above gets grades computed from its dependents below.
+        """
+        positions_letters = self.config.vertical_positions
+
+        # Group facilities by vertical position
+        by_level: dict[str, list[Facility]] = {lvl: [] for lvl in positions_letters}
         for f in facilities:
-            if f.dependency_chain.tier:
-                by_tier[f.dependency_chain.tier].append(f)
+            if f.dependency_position and f.dependency_position.vertical_position in by_level:
+                by_level[f.dependency_position.vertical_position].append(f)
 
-        # Assign grades bottom-up
-        # Tertiary: Random grades
-        for f in by_tier[DependencyTier.TERTIARY]:
-            f.resiliency_grade = self._sample_grade()
+        # Assign grades bottom-up (deepest level first)
+        for level in reversed(positions_letters):
+            deeper_levels = [lvl for lvl in positions_letters if lvl > level]
 
-        # Secondary: Based on tertiary dependents
-        for f in by_tier[DependencyTier.SECONDARY]:
-            dependents = self._find_dependents(f, facilities, DependencyTier.TERTIARY)
-            f.resiliency_grade = self._calculate_grade_from_dependents(dependents)
-
-        # Primary: Based on all dependents
-        for f in by_tier[DependencyTier.PRIMARY]:
-            t_deps = self._find_dependents(f, facilities, DependencyTier.TERTIARY)
-            s_deps = self._find_dependents(f, facilities, DependencyTier.SECONDARY)
-            f.resiliency_grade = self._calculate_grade_from_dependents(t_deps + s_deps)
+            if not deeper_levels:
+                # Deepest level: assign random grades
+                for f in by_level[level]:
+                    f.resiliency_grade = self._sample_grade()
+            else:
+                # Compute grade from all dependents at deeper levels
+                for f in by_level[level]:
+                    dependents = self._find_dependents(f, facilities, deeper_levels)
+                    f.resiliency_grade = self._calculate_grade_from_dependents(dependents)
 
     def _find_dependents(
         self,
         facility: Facility,
         all_facilities: list[Facility],
-        target_tier: DependencyTier,
+        target_levels: list[str],
     ) -> list[Facility]:
-        """Find facilities that depend on the given facility."""
+        """Find facilities at the target levels that share a group with the given facility."""
         dependents = []
         for other in all_facilities:
-            if other.dependency_chain.tier == target_tier:
-                if facility.dependency_chain.depends_on(other.dependency_chain):
-                    dependents.append(other)
+            if (
+                other.dependency_position
+                and other.dependency_position.vertical_position in target_levels
+                and facility.dependency_position.has_shared_group(other.dependency_position)
+            ):
+                dependents.append(other)
         return dependents
 
-    def _calculate_grade_from_dependents(
-        self, dependents: list[Facility]
-    ) -> UFCGrade:
+    def _calculate_grade_from_dependents(self, dependents: list[Facility]) -> UFCGrade:
         """Calculate grade based on dependent facilities' grades."""
         if not dependents:
             return self._sample_grade()
 
-        grades = [f.resiliency_grade.value for f in dependents if f.resiliency_grade]
+        grades = [int(f.resiliency_grade.value) for f in dependents if f.resiliency_grade]
         if not grades:
             return UFCGrade.G1
 
@@ -397,9 +404,7 @@ class DataGenerator:
 
     def _sample_condition_index(self) -> float:
         """Sample a condition index from the distribution."""
-        return round(self._sample_from_distribution(
-            self.config.condition_index_distribution
-        ), 2)
+        return round(self._sample_from_distribution(self.config.condition_index_distribution), 2)
 
     def _sample_year_constructed(self, max_age: int) -> int:
         """Sample a year constructed based on age distribution."""
@@ -409,14 +414,10 @@ class DataGenerator:
 
     def _sample_grade(self) -> UFCGrade:
         """Sample a UFC grade from the distribution."""
-        grade_value = int(
-            self._sample_from_distribution(self.config.grade_distribution)
-        )
-        return UFCGrade(min(max(grade_value, 1), 4))
+        grade_value = int(self._sample_from_distribution(self.config.grade_distribution))
+        return UFCGrade(str(min(max(grade_value, 1), 4)))
 
-    def _sample_from_distribution(
-        self, distribution: list[SimpleSegment]
-    ) -> float:
+    def _sample_from_distribution(self, distribution: list[SimpleSegment]) -> float:
         """Sample a value from a probability distribution."""
         total_prob = sum(s.probability for s in distribution)
         r = random.uniform(0, total_prob)

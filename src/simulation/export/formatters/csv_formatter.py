@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from ....domain import Facility, Installation, System
+from ....models import Facility, Installation, System
 from ..enums import OutputLayout
 from .base import BaseFormatter
 
@@ -30,6 +30,7 @@ class CSVFormatter(BaseFormatter):
 
         Returns:
             Path to the main output file.
+
         """
         if self.config.layout == OutputLayout.NORMALIZED:
             return self._export_normalized(installations, facilities, systems, metadata)
@@ -48,10 +49,7 @@ class CSVFormatter(BaseFormatter):
 
         # Update metadata with record counts
         if metadata:
-            metadata["record_counts"] = {
-                name: len(df) if df is not None else 0
-                for name, df in tables.items()
-            }
+            metadata["record_counts"] = {name: len(df) if df is not None else 0 for name, df in tables.items()}
 
         # Write each table to a separate file
         for table_name, df in tables.items():

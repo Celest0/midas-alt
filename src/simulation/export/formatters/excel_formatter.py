@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from ....domain import Facility, Installation, System
+from ....models import Facility, Installation, System
 from ..enums import OutputLayout
 from .base import BaseFormatter
 
@@ -30,9 +30,8 @@ class ExcelFormatter(BaseFormatter):
 
         Returns:
             Path to the output file.
-        """
-        import pandas as pd
 
+        """
         if self.config.layout == OutputLayout.NORMALIZED:
             return self._export_normalized(installations, facilities, systems, metadata)
         else:
@@ -52,10 +51,7 @@ class ExcelFormatter(BaseFormatter):
 
         # Update metadata
         if metadata:
-            metadata["record_counts"] = {
-                name: len(df) if df is not None else 0
-                for name, df in tables.items()
-            }
+            metadata["record_counts"] = {name: len(df) if df is not None else 0 for name, df in tables.items()}
 
         # Write to Excel with separate sheets
         with pd.ExcelWriter(self.config.file_path, engine="openpyxl") as writer:
@@ -66,11 +62,7 @@ class ExcelFormatter(BaseFormatter):
 
             # Write metadata sheet if requested
             if metadata:
-                meta_df = pd.DataFrame([
-                    {"key": k, "value": str(v)}
-                    for k, v in metadata.items()
-                    if not isinstance(v, dict)
-                ])
+                meta_df = pd.DataFrame([{"key": k, "value": str(v)} for k, v in metadata.items() if not isinstance(v, dict)])
                 if not meta_df.empty:
                     meta_df.to_excel(writer, sheet_name="_metadata", index=False)
 
@@ -101,11 +93,7 @@ class ExcelFormatter(BaseFormatter):
 
             # Write metadata sheet if requested
             if metadata:
-                meta_df = pd.DataFrame([
-                    {"key": k, "value": str(v)}
-                    for k, v in metadata.items()
-                    if not isinstance(v, dict)
-                ])
+                meta_df = pd.DataFrame([{"key": k, "value": str(v)} for k, v in metadata.items() if not isinstance(v, dict)])
                 if not meta_df.empty:
                     meta_df.to_excel(writer, sheet_name="_metadata", index=False)
 

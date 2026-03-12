@@ -12,6 +12,7 @@ from src.cli.handlers.config_handlers import (
 from src.cli.handlers.simulate_handlers import (
     handle_generate_data,
     handle_quick_generate,
+    handle_run_time_simulation,
     handle_view_facility_and_system,
     handle_view_simulated_data_examples,
 )
@@ -113,14 +114,19 @@ def get_main_menu():
 
     builder = MenuBuilder("Main Menu")
     builder.add_item(
-        "Configuration",
-        handle_configuration,
-        description="View and manage facility types, system types, and configuration values",
+        "Run Time Simulation",
+        handle_run_time_simulation,
+        description="Load or generate one installation and run a live time-stepped simulation shell",
     )
     builder.add_item(
         "Simulation",
         handle_simulation,
-        description="Generate and explore simulated installations, facilities, and systems",
+        description="Explore generated data, inspect hierarchies, and export simulation datasets",
+    )
+    builder.add_item(
+        "Configuration",
+        handle_configuration,
+        description="View and manage facility types, system types, and configuration values",
     )
     # builder.add_item(
     #     "ML Prediction",

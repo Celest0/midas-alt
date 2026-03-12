@@ -7,12 +7,13 @@ from rich.console import Console
 from rich.prompt import Prompt
 from rich.table import Table
 
+from src.cli.simulation_shell import SimulationShell
 from src.cli.utils import DisplayHelper, InputHelper, NavigationHelper
 from src.config import MIDASSettings
 from src.config.app_state import get_app_state
 from src.models import Facility, Installation, System
 from src.models.work_order import WorkOrder
-from src.simulation import DataExporter, DataGenerator
+from src.simulation import DataExporter, DataGenerator, SimulationDataLoader, SimulationSession
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -146,6 +147,156 @@ def _format_installation(installation: Installation, facilities: list[Facility])
         f"Facilities: {len(facilities)}",
     ]
     return "\n".join(lines)
+
+
+def _build_installation_selection_rows(
+    installations: list[Installation],
+    facilities: list[Facility],
+    systems: list[System],
+    work_orders: list[WorkOrder],
+) -> list[dict[str, str]]:
+    """Create installation summary rows for selection and testing."""
+    facility_counts: dict[str, int] = {}
+    system_counts: dict[str, int] = {}
+    work_order_counts: dict[str, int] = {}
+    facility_to_installation = {facility.id: facility.installation_id for facility in facilities}
+    system_to_installation = {}
+
+    for facility in facilities:
+        if facility.installation_id:
+            facility_counts[facility.installation_id] = facility_counts.get(facility.installation_id, 0) + 1
+    for system in systems:
+        installation_id = facility_to_installation.get(system.facility_id)
+        if installation_id:
+            system_to_installation[system.id] = installation_id
+            system_counts[installation_id] = system_counts.get(installation_id, 0) + 1
+    for work_order in work_orders:
+        installation_id = work_order.installation_id or system_to_installation.get(work_order.system_id or "")
+        if installation_id:
+            work_order_counts[installation_id] = work_order_counts.get(installation_id, 0) + 1
+
+    rows = []
+    for installation in installations:
+        rows.append(
+            {
+                "id": installation.id,
+                "title": installation.title or installation.id,
+                "location": installation.location or "N/A",
+                "condition_index": f"{installation.condition_index:.2f}" if installation.condition_index is not None else "N/A",
+                "facilities": str(facility_counts.get(installation.id, 0)),
+                "systems": str(system_counts.get(installation.id, 0)),
+                "work_orders": str(work_order_counts.get(installation.id, 0)),
+            }
+        )
+    return rows
+
+
+def _prompt_for_installation_id(result, settings: MIDASSettings) -> str | None:
+    """Prompt the user to select an installation when multiple are available."""
+    if not result.installations:
+        return None
+    if len(result.installations) == 1:
+        return result.installations[0].id
+
+    rows = _build_installation_selection_rows(
+        installations=result.installations,
+        facilities=result.facilities,
+        systems=result.systems,
+        work_orders=result.work_orders,
+    )
+    table = Table(title="Choose Installation To Simulate", show_header=True, header_style="bold cyan")
+    table.add_column("#", style="cyan", width=4)
+    table.add_column("Title", style="green")
+    table.add_column("Location", style="yellow")
+    table.add_column("CI", style="magenta", justify="right")
+    table.add_column("Facilities", style="blue", justify="right")
+    table.add_column("Systems", style="blue", justify="right")
+    table.add_column("WOs", style="green", justify="right")
+
+    for index, row in enumerate(rows, start=1):
+        table.add_row(
+            str(index),
+            row["title"],
+            row["location"],
+            row["condition_index"],
+            row["facilities"],
+            row["systems"],
+            row["work_orders"],
+        )
+
+    DisplayHelper.print_table(table)
+    selection = InputHelper.ask_number(
+        f"Select installation 1-{len(result.installations)}",
+        min_value=1,
+        max_value=len(result.installations),
+        default=1,
+    )
+    if selection is None:
+        return None
+    return result.installations[selection - 1].id
+
+
+def _load_or_generate_simulation_result(settings: MIDASSettings):
+    """Prompt the user to load exported data or generate a default installation."""
+    NavigationHelper.show_help(
+        "Simulation Data Source",
+        "Load a normalized CSV/XLSX export from the data export flow, or generate one installation with default settings.",
+        "generate (default), load",
+    )
+    source = InputHelper.ask_choice(
+        "Choose simulation data source [generate/load]",
+        choices=["generate", "load"],
+        default="generate",
+        allow_back=True,
+    )
+    if source is None:
+        return None
+    if source == "generate":
+        generator = DataGenerator(settings=settings)
+        return generator.generate_installation()
+
+    dataset_path = InputHelper.get_input_with_backspace(
+        "Enter normalized dataset directory or XLSX workbook path",
+        allow_empty=True,
+    )
+    if dataset_path is None:
+        return None
+    loader = SimulationDataLoader(settings=settings)
+    return loader.load(Path(dataset_path))
+
+
+def handle_run_time_simulation() -> None:
+    """Load or generate one installation and enter the live simulation shell."""
+    settings = _get_settings()
+
+    try:
+        result = _load_or_generate_simulation_result(settings)
+        if result is None:
+            return
+        if not result.installations:
+            DisplayHelper.print_warning("No installations were available for simulation.")
+            InputHelper.wait_for_continue()
+            return
+
+        installation_id = _prompt_for_installation_id(result, settings)
+        if installation_id is None:
+            return
+
+        session = SimulationSession.from_generation_result(
+            result=result,
+            settings=settings,
+            installation_id=installation_id,
+        )
+        SimulationShell(session).run()
+        InputHelper.wait_for_continue("\nPress Enter to return to the simulation menu")
+    except ValueError as exc:
+        DisplayHelper.print_error(str(exc), title="Simulation Load Error")
+        logger.exception("Simulation CLI input error")
+        InputHelper.wait_for_continue()
+    except Exception as exc:  # pragma: no cover - defensive user-facing handler
+        DisplayHelper.print_error(f"Error running simulation: {exc}", title="Simulation Error")
+        logger.exception("Unexpected error running simulation")
+        InputHelper.wait_for_continue()
 
 
 def handle_view_simulated_data_examples() -> None:

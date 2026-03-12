@@ -2,21 +2,20 @@
 
 from rich.console import Console
 
-from src.cli.handlers import (
-    handle_create_training_dataset,
-    handle_generate_data,
-    handle_make_predictions,
-    handle_quick_generate,
+from src.cli.handlers.config_handlers import (
     handle_reload_configuration,
-    handle_train_and_compare_models,
     handle_view_config_values,
     handle_view_facility_types_summary,
-    handle_view_features,
     handle_view_installation_locations_summary,
-    handle_view_simulated_data_examples,
     handle_view_system_types_summary,
 )
-from src.cli.menu import MenuBuilder
+from src.cli.handlers.simulate_handlers import (
+    handle_generate_data,
+    handle_quick_generate,
+    handle_view_facility_and_system,
+    handle_view_simulated_data_examples,
+)
+from src.cli.menu.menu_builder import MenuBuilder
 
 console = Console()
 
@@ -66,7 +65,12 @@ def get_simulation_menu():
     builder.add_item(
         "Explore Simulated Data",
         handle_view_simulated_data_examples,
-        description="Interactive navigation through Installation, Facility, and System entities",
+        description="Interactive navigation through installation, facility, system, and work-order entities",
+    )
+    builder.add_item(
+        "View Single Facility + System",
+        handle_view_facility_and_system,
+        description="Generate one installation and inspect a selected facility/system pair",
     )
     builder.add_item(
         "Quick Generate & Stats",
@@ -76,40 +80,7 @@ def get_simulation_menu():
     builder.add_item(
         "Generate & Export Dataset",
         handle_generate_data,
-        description="Full wizard to generate and export data (CSV, JSON, Excel)",
-    )
-    builder.add_separator()
-    builder.add_item(
-        "Back to Main Menu",
-        lambda: None,
-        exit_menu=True,
-        description="Return to the main menu",
-    )
-    return builder.build()
-
-
-def get_ml_prediction_menu():
-    """Create and return the ML prediction menu."""
-    builder = MenuBuilder("ML Prediction Menu")
-    builder.add_item(
-        "View Feature Extraction",
-        handle_view_features,
-        description="See what features are extracted from entities for ML models",
-    )
-    builder.add_item(
-        "Create Training Dataset",
-        handle_create_training_dataset,
-        description="Generate labeled datasets for training prediction models",
-    )
-    builder.add_item(
-        "Train & Compare Models",
-        handle_train_and_compare_models,
-        description="Train multiple models and compare their performance metrics",
-    )
-    builder.add_item(
-        "Make Predictions",
-        handle_make_predictions,
-        description="Predict degradation timing for sample entities with confidence intervals",
+        description="Full wizard to generate and export data (CSV, Excel)",
     )
     builder.add_separator()
     builder.add_item(

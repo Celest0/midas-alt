@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from src.cli.menu import get_main_menu
+from src.cli.menu.menu_factory import get_main_menu
 from src.cli.utils import DisplayHelper, InputHelper
 from src.config.app_state import ApplicationState, set_app_state
 
@@ -37,8 +37,8 @@ def initialize_configuration() -> None:
             DisplayHelper.print_error(status_message, title="MIDAS")
             console.print("[yellow]Continuing with limited functionality...[/yellow]\n")
 
-    except Exception as e:
-        error_msg = f"Error loading configuration: {e}"
+    except (OSError, RuntimeError, TypeError, ValueError) as e:
+        error_msg = f"Configuration initialization error: expected valid startup state (got {e})"
         DisplayHelper.print_error(error_msg, title="MIDAS")
         logger.exception("Error during initial configuration load")
 
@@ -74,6 +74,7 @@ def run_cli() -> None:
 
 
 def run_demo() -> None:
+    """Run the CLI startup flow without launching the main menu loop."""
     display_welcome()
     initialize_configuration()
 

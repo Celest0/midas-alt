@@ -164,47 +164,66 @@ def create_config_values_panel(settings: MIDASSettings) -> Panel:
         Rich Panel with configuration summary.
 
     """
-    # Build config state values table
-    config_table = Table(show_header=False, box=None, padding=(0, 2))
-    config_table.add_column("Setting", style="cyan", width=40)
-    config_table.add_column("Value", style="white")
+    # --- Degradation Settings ---
+    deg_table = Table(show_header=False, box=None, padding=(0, 2))
+    deg_table.add_column("Setting", style="cyan", width=45)
+    deg_table.add_column("Value", style="white")
 
-    # Simulation settings
+    deg = settings.degradation
+    deg_table.add_row("Condition Index Degraded Threshold", str(deg.condition_index_degraded_threshold))
+    deg_table.add_row("Resiliency Grade Threshold", str(deg.resiliency_grade_threshold))
+    deg_table.add_row("Initial Condition Index", str(deg.initial_condition_index))
+    deg_table.add_row("Maximum Time Series Years History", str(deg.max_time_series_years))
+
+    # --- Simulation Settings ---
+    sim_table = Table(show_header=False, box=None, padding=(0, 2))
+    sim_table.add_column("Setting", style="cyan", width=45)
+    sim_table.add_column("Value", style="white")
+
     sim = settings.simulation
     low, high = sim.facilities_per_installation
     facilities_str = str(low) if low == high else f"{low}-{high}"
-    config_table.add_row("Facilities Per Installation", facilities_str)
+    sim_table.add_row("Facilities Per Installation", facilities_str)
 
     low, high = sim.dependency_chain_group_range
     dep_chain_str = str(low) if low == high else f"{low}-{high}"
-    config_table.add_row("Dependency Chain Group Range", dep_chain_str)
+    sim_table.add_row("Dependency Chain Group Range", dep_chain_str)
 
-    # Degradation settings
-    deg = settings.degradation
-    config_table.add_row("Condition Index Degraded Threshold", str(deg.condition_index_degraded_threshold))
-    config_table.add_row("Resiliency Grade Threshold", str(deg.resiliency_grade_threshold))
+    sim_table.add_row("Maximum System Age", str(sim.maximum_system_age))
+    sim_table.add_row("Maximum Facility Age", str(sim.maximum_facility_age))
+    sim_table.add_row("Facility Condition Randomly Degrades Chance", f"{sim.facility_condition_randomly_degrades_chance}%")
 
-    # More simulation settings
-    config_table.add_row("Maximum System Age", str(sim.maximum_system_age))
-    config_table.add_row("Maximum Facility Age", str(sim.maximum_facility_age))
-    config_table.add_row("Facility Condition Randomly Degrades Chance", f"{sim.facility_condition_randomly_degrades_chance}%")
+    # --- Output Settings ---
+    out_table = Table(show_header=False, box=None, padding=(0, 2))
+    out_table.add_column("Setting", style="cyan", width=45)
+    out_table.add_column("Value", style="white")
 
-    # Build distributions section
+    out = settings.output
+    out_table.add_row("Excel Sheet Main Name", out.excel_sheet_main)
+    out_table.add_row("Excel Sheet Facility Time Series Name", out.excel_sheet_facility_ts)
+    out_table.add_row("Excel Sheet System Time Series Name", out.excel_sheet_system_ts)
+    out_table.add_row("Excel Sheet Metadata Name", out.excel_sheet_metadata)
+    out_table.add_row("Excel Sheet Work Orders Name", out.excel_sheet_work_orders)
+    out_table.add_row("Metadata File Suffix", out.metadata_file_suffix)
+    out_table.add_row("CSV Table Separator", f'"{out.csv_table_separator}"')
+
+    # --- Distributions ---
     dist = settings.distributions
 
-    # Condition Index Distribution
     dist_table_ci = _create_distribution_table(dist.condition_index, "Value Range")
-
-    # Age Distribution
     dist_table_age = _create_distribution_table(dist.age, "Value Range")
-
-    # Grade Distribution
     dist_table_grade = _create_distribution_table(dist.grade, "Grade", prefix="Grade ")
+    dist_table_wo_count = _create_bathtub_table(dist.work_order_count)
+    dist_table_wo_status = _create_distribution_table(dist.work_order_status, "Status")
+    dist_table_wo_priority = _create_distribution_table(dist.work_order_priority, "Priority")
 
-    # Build the main content
     content = Group(
-        Text("CONFIG STATE VALUES", style="bold cyan"),
-        config_table,
+        Text("DEGRADATION SETTINGS", style="bold cyan"),
+        deg_table,
+        Text("\nSIMULATION SETTINGS", style="bold cyan"),
+        sim_table,
+        Text("\nOUTPUT SETTINGS", style="bold cyan"),
+        out_table,
         Text("\nSIMULATION PROBABILITY DISTRIBUTIONS", style="bold cyan"),
         Text("\nSimulated Condition Index Distribution:", style="bold yellow"),
         dist_table_ci,
@@ -212,9 +231,43 @@ def create_config_values_panel(settings: MIDASSettings) -> Panel:
         dist_table_age,
         Text("\nSimulated Grade Distribution:", style="bold yellow"),
         dist_table_grade,
+        Text("\nSimulated Work Order Count Distribution:", style="bold yellow"),
+        dist_table_wo_count,
+        Text("\nSimulated Work Order Status Distribution:", style="bold yellow"),
+        dist_table_wo_status,
+        Text("\nSimulated Work Order Priority Distribution:", style="bold yellow"),
+        dist_table_wo_priority,
     )
 
     return Panel(content, title="MIDAS Configuration Values Summary", border_style="green")
+
+
+def _create_bathtub_table(distribution) -> Table:
+    """Create a table showing bathtub curve distribution parameters.
+
+    Args:
+        distribution: A BathtubCurveDistribution or compatible object.
+
+    Returns:
+        Rich Table showing the curve parameters.
+
+    """
+    table = Table(show_header=True, header_style="bold yellow", box=None, padding=(0, 2))
+    table.add_column("Parameter", style="cyan", width=25)
+    table.add_column("Value", style="white", justify="right")
+
+    if distribution is None:
+        table.add_row("[dim]Not configured[/dim]", "")
+        return table
+
+    table.add_row("Early Peak Rate", str(getattr(distribution, "early_peak_rate", "N/A")))
+    table.add_row("Useful Life Rate", str(getattr(distribution, "useful_life_rate", "N/A")))
+    table.add_row("Wearout Peak Rate", str(getattr(distribution, "wearout_peak_rate", "N/A")))
+    table.add_row("Early End Ratio", str(getattr(distribution, "early_end_ratio", "N/A")))
+    table.add_row("Wearout Start Ratio", str(getattr(distribution, "wearout_start_ratio", "N/A")))
+    table.add_row("Max Ratio", str(getattr(distribution, "max_ratio", "N/A")))
+
+    return table
 
 
 def _create_distribution_table(distribution, value_column_name: str, prefix: str = "") -> Table:

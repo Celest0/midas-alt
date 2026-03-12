@@ -40,6 +40,8 @@ class Facility:
     @property
     def age_years(self) -> int | None:
         """Calculate age in years from year_constructed."""
+        if self._age_months is not None:
+            return self._age_months // 12
         if self.year_constructed is None:
             return None
         return datetime.now().year - self.year_constructed

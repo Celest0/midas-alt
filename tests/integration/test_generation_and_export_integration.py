@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from src.config.settings import MIDASSettings
-from src.enums import UFCGrade
+from src.enums import UFCGrade, WO_Priority, WO_Status
 from src.models import Facility, System
 from src.simulation.export.exporter import DataExporter
 from src.simulation.export.transformers import DataTransformer
@@ -115,6 +115,9 @@ def test_work_order_generation_is_age_correlated_and_lifecycle_consistent() -> N
 
     old_total = 0
     new_total = 0
+    seen_statuses: set[WO_Status] = set()
+    seen_priorities: set[WO_Priority] = set()
+    seen_requesting_orgs: set[str] = set()
     for _ in range(120):
         old_work_orders = generator.generate_by_system(old_system)
         new_work_orders = generator.generate_by_system(new_system)
@@ -122,19 +125,24 @@ def test_work_order_generation_is_age_correlated_and_lifecycle_consistent() -> N
         new_total += len(new_work_orders)
 
         for work_order in old_work_orders + new_work_orders:
+            assert isinstance(work_order.status, WO_Status)
+            assert isinstance(work_order.priority, WO_Priority)
             assert work_order.requesting_organization in {"J1", "J2", "J3", "J4", "J5", "J6"}
             assert isinstance(work_order.impacts_mission, bool)
             assert work_order.request_datetime is not None
             assert work_order.request_datetime <= datetime.now()
             assert work_order.request_datetime.year >= (old_system.year_constructed if work_order.system_id == old_system.id else new_system.year_constructed)
+            seen_statuses.add(work_order.status)
+            seen_priorities.add(work_order.priority)
+            seen_requesting_orgs.add(work_order.requesting_organization)
 
             assert work_order.problem_description is not None
             assert work_order.requested_action is not None
 
-            if work_order.status.value in {"Submitted", "Approved"}:
+            if work_order.status in {WO_Status.SUBMITTED, WO_Status.APPROVED}:
                 assert work_order.actions_taken is None
                 assert work_order.completion_datetime is None
-            elif work_order.status.value == "In Progress":
+            elif work_order.status == WO_Status.IN_PROGRESS:
                 assert work_order.completion_datetime is None
             else:
                 assert work_order.actions_taken is not None
@@ -143,6 +151,9 @@ def test_work_order_generation_is_age_correlated_and_lifecycle_consistent() -> N
                 assert work_order.completion_datetime <= datetime.now()
 
     assert old_total > new_total
+    assert len(seen_statuses) > 1, "Expected multiple work-order statuses across the generated history"
+    assert len(seen_priorities) > 1, "Expected multiple work-order priorities across the generated history"
+    assert len(seen_requesting_orgs) > 1, "Expected multiple requesting organizations across the generated history"
 
 
 def test_normalized_export_uses_renamed_requesting_organization_field() -> None:

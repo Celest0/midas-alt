@@ -1,4 +1,4 @@
-"""MIDAS Scoped Functions, unaffiliated with any specific member"""
+"""MIDAS-scoped helper functions not tied to a specific module."""
 
 from .generate_id import generate_id
 

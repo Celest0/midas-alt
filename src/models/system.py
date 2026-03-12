@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from ..functions import generate_id
+from .work_order import WorkOrder
 
 
 @dataclass
@@ -27,6 +28,9 @@ class System:
     # Computed properties (set by services, cached here)
     _age_months: int | None = field(default=None, repr=False)
     _life_expectancy_months: int | None = field(default=None, repr=False)
+
+    # Store associated work order ID's
+    work_orders: list[WorkOrder] = field(default_factory=list)
 
     @property
     def age_years(self) -> int | None:

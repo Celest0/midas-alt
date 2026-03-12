@@ -1,6 +1,5 @@
-from dataclasses import dataclass, field
 import string
-
+from dataclasses import dataclass, field
 
 # All valid vertical positions (A-Z)
 VERTICAL_POSITIONS = list(string.ascii_uppercase)

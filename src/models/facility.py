@@ -1,9 +1,9 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from ..functions import generate_id
-
+from ..config.app_state import get_app_state
 from ..enums import UFCGrade
+from ..functions import generate_id
 from .dependency_position import DependencyPosition
 
 
@@ -54,3 +54,8 @@ class Facility:
         now: datetime = datetime.now()
         years = now.year - self.year_constructed
         return years * 12 + now.month - 1
+
+    @property
+    def title(self) -> str | None:
+        """Resolve the facility title from configured reference data."""
+        return get_app_state().settings.get_facility_type(self.facility_type_key).title

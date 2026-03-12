@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from ....models import Facility, Installation, System
+from ....models.work_order import WorkOrder
 from ..config import ExportConfig
 from ..transformers import DataTransformer
 
@@ -32,6 +33,7 @@ class BaseFormatter(ABC):
         installations: list[Installation],
         facilities: list[Facility],
         systems: list[System],
+        work_orders: list[WorkOrder],
         metadata: dict | None = None,
     ) -> Path:
         """Export data to file.
@@ -40,6 +42,7 @@ class BaseFormatter(ABC):
             installations: List of installations.
             facilities: List of facilities.
             systems: List of systems.
+            work_orders: List of work orders.
             metadata: Optional metadata dictionary.
 
         Returns:

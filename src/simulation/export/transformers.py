@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 
 from ...models import Facility, Installation, System
+from ...models.work_order import WorkOrder
 
 if TYPE_CHECKING:
     from ...config import MIDASSettings
@@ -40,6 +41,7 @@ class DataTransformer:
         installations: list[Installation],
         facilities: list[Facility],
         systems: list[System],
+        work_orders: list[WorkOrder],
     ) -> dict[str, pd.DataFrame | None]:
         """Create normalized tables from domain entities.
 
@@ -47,6 +49,7 @@ class DataTransformer:
             installations: List of installations.
             facilities: List of facilities.
             systems: List of systems.
+            work_orders: List of work orders.
 
         Returns:
             Dictionary mapping table names to DataFrames.
@@ -117,10 +120,34 @@ class DataTransformer:
                 }
             )
 
+        work_orders_rows = []
+        for work_order in work_orders:
+            work_orders_rows.append(
+                {
+                    "id": work_order.id,
+                    "installation_id": work_order.installation_id,
+                    "facility_id": work_order.facility_id,
+                    "system_id": work_order.system_id,
+                    "requesting_organization": work_order.requesting_organization,
+                    "work_category": work_order.work_category,
+                    "room_area": work_order.room_area,
+                    "impacts_mission": work_order.impacts_mission,
+                    "status": work_order.status.value if work_order.status else None,
+                    "priority": work_order.priority.value if work_order.priority else None,
+                    "trade": work_order.trade.value if work_order.trade else None,
+                    "request_datetime": work_order.request_datetime,
+                    "completion_datetime": work_order.completion_datetime,
+                    "problem_description": work_order.problem_description,
+                    "requested_action": work_order.requested_action,
+                    "actions_taken": work_order.actions_taken,
+                }
+            )
+
         tables = {
             "installations": pd.DataFrame(installations_rows) if installations_rows else None,
             "facilities": pd.DataFrame(facilities_rows) if facilities_rows else None,
             "systems": pd.DataFrame(systems_rows) if systems_rows else None,
+            "work_orders": pd.DataFrame(work_orders_rows) if work_orders_rows else None,
         }
 
         # Generate time series data if requested
@@ -138,6 +165,7 @@ class DataTransformer:
         installations: list[Installation],
         facilities: list[Facility],
         systems: list[System],
+        work_orders: list[WorkOrder],
     ) -> list[dict]:
         """Create flattened rows for denormalized export.
 
@@ -145,6 +173,7 @@ class DataTransformer:
             installations: List of installations.
             facilities: List of facilities.
             systems: List of systems.
+            work_orders: List of work orders.
 
         Returns:
             List of flattened row dictionaries.
@@ -154,8 +183,12 @@ class DataTransformer:
         install_map = {i.id: i for i in installations}
         facility_map = {f.id: f for f in facilities}
 
+        system_map = {s.id: s for s in systems}
         rows = []
-        for system in systems:
+        for work_order in work_orders:
+            system = system_map.get(work_order.system_id or "")
+            if not system:
+                continue
             facility = facility_map.get(system.facility_id)
             if not facility:
                 continue
@@ -187,6 +220,17 @@ class DataTransformer:
                 "system_year_constructed": system.year_constructed,
                 "system_age_years": system.age_years,
                 "system_condition_index": system.condition_index,
+                "work_order_id": work_order.id,
+                "work_order_status": work_order.status.value if work_order.status else None,
+                "work_order_priority": work_order.priority.value if work_order.priority else None,
+                "work_order_trade": work_order.trade.value if work_order.trade else None,
+                "work_order_requesting_organization": work_order.requesting_organization,
+                "work_order_impacts_mission": work_order.impacts_mission,
+                "work_order_request_datetime": work_order.request_datetime,
+                "work_order_completion_datetime": work_order.completion_datetime,
+                "work_order_problem_description": work_order.problem_description,
+                "work_order_requested_action": work_order.requested_action,
+                "work_order_actions_taken": work_order.actions_taken,
             }
             rows.append(row)
 
@@ -197,13 +241,15 @@ class DataTransformer:
         installations: list[Installation],
         facilities: list[Facility],
         systems: list[System],
+        work_orders: list[WorkOrder],
     ) -> dict:
-        """Create nested dictionary structure for JSON export.
+        """Create nested dictionary structure of generated entities.
 
         Args:
             installations: List of installations.
             facilities: List of facilities.
             systems: List of systems.
+            work_orders: List of work orders.
 
         Returns:
             Dictionary with nested installation structure.
@@ -221,6 +267,14 @@ class DataTransformer:
             if s.facility_id not in systems_by_facility:
                 systems_by_facility[s.facility_id] = []
             systems_by_facility[s.facility_id].append(s)
+
+        work_orders_by_system: dict[str, list[WorkOrder]] = {}
+        for work_order in work_orders:
+            if not work_order.system_id:
+                continue
+            if work_order.system_id not in work_orders_by_system:
+                work_orders_by_system[work_order.system_id] = []
+            work_orders_by_system[work_order.system_id].append(work_order)
 
         data = []
         for install in installations:
@@ -257,7 +311,24 @@ class DataTransformer:
                         "year_constructed": system.year_constructed,
                         "age_years": system.age_years,
                         "condition_index": system.condition_index,
+                        "work_orders": [],
                     }
+                    for work_order in work_orders_by_system.get(system.id, []):
+                        system_data["work_orders"].append(
+                            {
+                                "id": work_order.id,
+                                "status": work_order.status.value if work_order.status else None,
+                                "priority": work_order.priority.value if work_order.priority else None,
+                                "trade": work_order.trade.value if work_order.trade else None,
+                                "requesting_organization": work_order.requesting_organization,
+                                "impacts_mission": work_order.impacts_mission,
+                                "request_datetime": work_order.request_datetime,
+                                "completion_datetime": work_order.completion_datetime,
+                                "problem_description": work_order.problem_description,
+                                "requested_action": work_order.requested_action,
+                                "actions_taken": work_order.actions_taken,
+                            }
+                        )
                     facility_data["systems"].append(system_data)
 
                 install_data["facilities"].append(facility_data)
@@ -283,7 +354,6 @@ class DataTransformer:
 
         """
         rows = []
-        current_date = datetime.now()
 
         for facility in facilities:
             if facility.condition_index is None or facility.year_constructed is None:

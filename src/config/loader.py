@@ -4,22 +4,28 @@ Loads reference data (facility types, system types) and settings
 from the midas_config_values.xlsx file.
 """
 
+from __future__ import annotations
+
+import json
 import logging
+import random
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 from pandas import ExcelFile
 
 from .reference_data import FacilityType, InstallationLocation, SystemType
-from .settings import (
-    DegradationSettings,
-    MIDASSettings,
-    OutputSettings,
-    SimulationDistributions,
-    SimulationSettings,
-)
+
+if TYPE_CHECKING:
+    from .settings import (
+        DegradationSettings,
+        MIDASSettings,
+        OutputSettings,
+        SimulationDistributions,
+        SimulationSettings,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -84,19 +90,24 @@ def load_settings_from_excel(path: Path) -> MIDASSettings:
 
     try:
         excel_file = ExcelFile(path)
-    except Exception as e:
-        raise ConfigLoadError(f"Failed to open Excel file: {e}") from e
+    except (OSError, ValueError) as e:
+        raise ConfigLoadError(f"Configuration load error: failed to open workbook at '{path}' ({e})") from e
+
+    # Import settings models locally to avoid module import cycles.
+    from .settings import MIDASSettings
 
     # Load reference data
     facility_types = _load_facility_types(excel_file)
     system_types = _load_system_types(excel_file)
     locations = _load_install_locations(excel_file)
-
     # Load settings from Config sheet (if present)
     degradation, simulation, output, config_dict = _load_config_values(excel_file)
 
     # Load distributions from config (falls back to defaults if not specified)
     distributions = _load_distributions(config_dict)
+
+    # Eagerly load work-order text so generation never re-reads the workbook.
+    wo_text_cache = _load_work_order_text_cache(excel_file)
 
     return MIDASSettings(
         degradation=degradation,
@@ -105,7 +116,9 @@ def load_settings_from_excel(path: Path) -> MIDASSettings:
         distributions=distributions,
         facility_types=facility_types,
         system_types=system_types,
-        installation_locations=locations
+        installation_locations=locations,
+        config_workbook_path=path,
+        work_order_text_cache=wo_text_cache,
     )
 
 
@@ -192,8 +205,9 @@ def _load_system_types(excel_file: ExcelFile) -> dict[int, SystemType]:
     logger.info(f"Loaded {len(system_types)} system types")
     return system_types
 
+
 def _load_install_locations(excel_file: ExcelFile) -> list[InstallationLocation]:
-    """Load the Location data from the Installation Locations"""
+    """Load installation location reference data."""
     if "Installation Locations" not in excel_file.sheet_names:
         logger.warning("No 'Installations Locations' sheet found in config file")
         return []
@@ -208,17 +222,183 @@ def _load_install_locations(excel_file: ExcelFile) -> list[InstallationLocation]
             region = row.get("Region", "")
             coordinates = row.get("Coordinates", "")
 
-
-            locations.append(InstallationLocation(
-                title=title,
-                location=location,
-                region=region,
-                coordinates= coordinates
-            ))
-        except Exception as e:
-            logger.warning(f"Unable to parse Installation Location: {e}")
+            locations.append(InstallationLocation(title=title, location=location, region=region, coordinates=coordinates))
+        except (TypeError, ValueError) as e:
+            logger.warning(f"Installation location parse error: invalid row data ({e})")
     logger.info(f"Loaded {len(locations)} Installation Locations")
     return locations
+
+
+def _is_matching_text_header(value: Any) -> bool:
+    return isinstance(value, str) and "description" in value.strip().lower()
+
+
+def _resolve_work_order_text_column_bounds(
+    title_row: list[Any], second_header_row: list[Any], system_type: str | None
+) -> tuple[int, int, int] | None:
+    """Resolve the description/request/action column indices for a system block."""
+    if not system_type:
+        return None
+
+    normalized = system_type.strip().lower()
+    candidate_indices = [idx for idx, value in enumerate(title_row) if isinstance(value, str) and value.strip().lower() == normalized]
+    if not candidate_indices:
+        return None
+
+    for idx in candidate_indices:
+        for start in (idx - 1, idx, idx + 1):
+            if start < 0 or start + 2 >= len(second_header_row):
+                continue
+            if _is_matching_text_header(second_header_row[start]):
+                return (start, start + 1, start + 2)
+
+    # Fallback for merged-title cells where the title appears centered.
+    first = candidate_indices[0]
+    if first + 2 < len(second_header_row):
+        return (first, first + 1, first + 2)
+    return None
+
+
+def _load_work_order_text_cache(excel_file: ExcelFile) -> dict[str, list[tuple[str, str, str]]]:
+    """Eagerly load all work-order text triplets grouped by system type.
+
+    Returns a dict mapping **lowercased** system-type title to a list of
+    ``(description, requested_action, action_taken)`` triplets.  A special
+    ``_fallback`` key collects the first valid triplet block for types that
+    cannot be resolved.
+    """
+    if "Work Order Text" not in excel_file.sheet_names:
+        return {}
+
+    try:
+        header_df = pd.read_excel(excel_file, sheet_name="Work Order Text", header=None, nrows=2)
+    except Exception as exc:
+        logger.warning(f"Failed loading Work Order Text headers: {exc}")
+        return {}
+
+    if header_df.empty or len(header_df.index) < 2:
+        return {}
+
+    title_row = header_df.iloc[0].tolist()
+    second_header_row = header_df.iloc[1].tolist()
+
+    try:
+        body_df = pd.read_excel(excel_file, sheet_name="Work Order Text", header=None, skiprows=2)
+    except Exception as exc:
+        logger.warning(f"Failed loading Work Order Text body: {exc}")
+        return {}
+
+    if body_df.empty:
+        return {}
+
+    # Discover every (system_type_title -> column triplet) mapping.
+    triplet_map: dict[str, tuple[int, int, int]] = {}
+    fallback_triplet: tuple[int, int, int] | None = None
+
+    seen_titles: set[str] = set()
+    for idx, cell in enumerate(title_row):
+        if not isinstance(cell, str) or not cell.strip():
+            continue
+        norm = cell.strip().lower()
+        if norm in seen_titles:
+            continue
+        bounds = _resolve_work_order_text_column_bounds(title_row, second_header_row, cell.strip())
+        if bounds is not None:
+            triplet_map[norm] = bounds
+            seen_titles.add(norm)
+
+    # Build a fallback from the first description header found.
+    if not triplet_map:
+        for start in range(len(second_header_row) - 2):
+            if _is_matching_text_header(second_header_row[start]):
+                fallback_triplet = (start, start + 1, start + 2)
+                break
+    else:
+        fallback_triplet = next(iter(triplet_map.values()))
+
+    def _extract_rows(cols: tuple[int, int, int]) -> list[tuple[str, str, str]]:
+        rows: list[tuple[str, str, str]] = []
+        for _, row in body_df.iterrows():
+            vals: list[str] = []
+            for ci in cols:
+                if ci < len(row):
+                    v = row.iloc[ci]
+                    vals.append(str(v).strip() if isinstance(v, str) and v.strip() else "example text")
+                else:
+                    vals.append("example text")
+            while len(vals) < 3:
+                vals.append("example text")
+            rows.append((vals[0], vals[1], vals[2]))
+        return rows
+
+    cache: dict[str, list[tuple[str, str, str]]] = {}
+    for title_key, cols in triplet_map.items():
+        extracted = _extract_rows(cols)
+        if extracted:
+            cache[title_key] = extracted
+
+    if fallback_triplet is not None:
+        extracted = _extract_rows(fallback_triplet)
+        if extracted:
+            cache.setdefault("_fallback", extracted)
+
+    logger.info(f"Loaded work-order text cache with {len(cache)} system-type groups")
+    return cache
+
+
+def sample_work_order_text_for_system(workbook_path: Path, system_type: str | None) -> tuple[str, str, str] | None:
+    """Sample one text triplet for a given system type from the workbook on-demand.
+
+    .. deprecated::
+        Prefer the cached path via ``MIDASSettings.sample_work_order_text``
+        which avoids re-reading the workbook on every call.
+    """
+    if not workbook_path.exists():
+        return None
+
+    try:
+        header_df = pd.read_excel(workbook_path, sheet_name="Work Order Text", header=None, nrows=2)
+    except Exception as exc:
+        logger.warning(f"Failed loading Work Order Text headers from '{workbook_path}': {exc}")
+        return None
+
+    if header_df.empty or len(header_df.index) < 2:
+        return None
+
+    title_row = header_df.iloc[0].tolist()
+    second_header_row = header_df.iloc[1].tolist()
+    column_bounds = _resolve_work_order_text_column_bounds(title_row, second_header_row, system_type)
+    if column_bounds is None:
+        for start in range(len(second_header_row) - 2):
+            if _is_matching_text_header(second_header_row[start]):
+                column_bounds = (start, start + 1, start + 2)
+                break
+    if column_bounds is None:
+        return None
+
+    desc_col, req_col, act_col = column_bounds
+    usecols = [desc_col, req_col, act_col]
+    try:
+        body_df = pd.read_excel(workbook_path, sheet_name="Work Order Text", header=None, skiprows=2, usecols=usecols)
+    except Exception as exc:
+        logger.warning(f"Failed loading Work Order Text rows from '{workbook_path}': {exc}")
+        return None
+
+    if body_df.empty:
+        return ("example text", "example text", "example text")
+
+    sampled_row = body_df.iloc[random.randrange(len(body_df.index))]
+    values: list[str] = []
+    for value in sampled_row.tolist():
+        if isinstance(value, str) and value.strip():
+            values.append(value.strip())
+        else:
+            values.append("example text")
+    while len(values) < 3:
+        values.append("example text")
+
+    return (values[0], values[1], values[2])
+
 
 # Mapping from human-readable Excel parameter names to internal setting keys
 PARAMETER_KEY_MAP: dict[str, str] = {
@@ -237,6 +417,7 @@ PARAMETER_KEY_MAP: dict[str, str] = {
     "output excel sheet main name": "excel_sheet_main",
     "output excel sheet facility ts name": "excel_sheet_facility_ts",
     "output excel sheet system ts name": "excel_sheet_system_ts",
+    "output excel sheet work orders name": "excel_sheet_work_orders",
     "output excel sheet metadata name": "excel_sheet_metadata",
     "outputed metadata file suffix": "metadata_file_suffix",
     "outputs csv table separator": "csv_table_separator",
@@ -244,6 +425,10 @@ PARAMETER_KEY_MAP: dict[str, str] = {
     "simulated condition index distribution": "condition_index_distribution",
     "simulated age distribution": "age_distribution",
     "simulated grade distribution": "grade_distribution",
+    "simulated work order count distribution": "work_order_count_distribution",
+    "simulated work order status distribution": "work_order_status_distribution",
+    "simulated work order priority distribution": "work_order_priority_distribution",
+    "simulated work order requesting organization distribution": "work_order_requesting_organization_distribution",
 }
 
 
@@ -271,6 +456,8 @@ def _load_config_values(
         The raw config dict is returned for additional parsing (e.g., distributions).
 
     """
+    from .settings import DegradationSettings, OutputSettings, SimulationSettings
+
     # Return defaults if no Config sheet
     if "Config" not in excel_file.sheet_names:
         return DegradationSettings(), SimulationSettings(), OutputSettings(), {}
@@ -317,6 +504,7 @@ def _load_config_values(
         excel_sheet_main=str(config_dict.get("excel_sheet_main", "Main Data")).strip(),
         excel_sheet_facility_ts=str(config_dict.get("excel_sheet_facility_ts", "Facility Time Series")).strip(),
         excel_sheet_system_ts=str(config_dict.get("excel_sheet_system_ts", "System Time Series")).strip(),
+        excel_sheet_work_orders=str(config_dict.get("excel_sheet_work_orders", "Work Orders")).strip(),
         excel_sheet_metadata=str(config_dict.get("excel_sheet_metadata", "_metadata")).strip(),
         metadata_file_suffix=str(config_dict.get("metadata_file_suffix", "_metadata.json")).strip(),
         csv_table_separator=str(config_dict.get("csv_table_separator", "_")).strip(),
@@ -326,7 +514,7 @@ def _load_config_values(
 
 
 def _parse_distribution_string(value: str) -> list[tuple[int, str]] | None:
-    """Parse a distribution string from Excel into (percentage, value_range) tuples.
+    r"""Parse a distribution string from Excel into (percentage, value_range) tuples.
 
     Supports formats like:
         - "1: (7: 1-50)\\n2: (88: 50-85)\\n3: (5: 85-100)"
@@ -372,17 +560,83 @@ def _parse_distribution_string(value: str) -> list[tuple[int, str]] | None:
     return segments if segments else None
 
 
+def _parse_weighted_category_distribution(value: str) -> list[tuple[int, str]] | None:
+    r"""Parse weighted categorical lines into (percentage, value) tuples.
+
+    Supported examples:
+    - "Completed: 52\\nIn Progress: 26"
+    - "52: Completed\\n26: In Progress"
+    """
+    if not value or pd.isna(value):
+        return None
+
+    value_str = str(value).strip()
+    if not value_str:
+        return None
+
+    # Normalize escaped newline literals (\\n) to real newlines so
+    # splitlines() can separate entries regardless of how Excel stored them.
+    value_str = value_str.replace("\\n", "\n")
+
+    segments: list[tuple[int, str]] = []
+    for line in value_str.splitlines():
+        item = line.strip()
+        if not item:
+            continue
+
+        # Format: Label: 40
+        match = re.match(r"(.+?)\s*:\s*(\d+)\s*$", item)
+        if match:
+            label = match.group(1).strip()
+            pct = int(match.group(2))
+            segments.append((pct, label))
+            continue
+
+        # Format: 40: Label
+        match = re.match(r"(\d+)\s*:\s*(.+?)\s*$", item)
+        if match:
+            pct = int(match.group(1))
+            label = match.group(2).strip()
+            segments.append((pct, label))
+
+    return segments if segments else None
+
+
+def _parse_distribution_spec(value: Any) -> dict[str, Any] | None:
+    """Parse JSON distribution spec from config cell."""
+    if value is None or pd.isna(value):
+        return None
+    text = str(value).strip()
+    if not text or not text.startswith("{"):
+        return None
+    try:
+        spec = json.loads(text)
+        return spec if isinstance(spec, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
 def _load_distributions(config_dict: dict[str, Any]) -> SimulationDistributions:
     """Load probability distributions from config dictionary.
 
     Parses distribution strings from the config and creates ProbabilityDistribution
     objects. Falls back to defaults if parsing fails or values are not provided.
     """
-    from ..simulation.distributions import ProbabilityDistribution, ProbabilitySegment
+    from .distributions import (
+        BaseDistribution,
+        ProbabilityDistribution,
+        ProbabilitySegment,
+        create_distribution_from_spec,
+    )
+    from .settings import SimulationDistributions
 
     condition_index = None
     age = None
     grade = None
+    work_order_count: BaseDistribution | None = None
+    work_order_status = None
+    work_order_priority = None
+    work_order_requesting_organization = None
 
     # Parse condition index distribution
     ci_str = config_dict.get("condition_index_distribution")
@@ -414,11 +668,97 @@ def _load_distributions(config_dict: dict[str, Any]) -> SimulationDistributions:
             except (ValueError, TypeError) as e:
                 logger.warning(f"Failed to parse grade distribution: {e}")
 
+    # Parse work-order count distribution (curve spec preferred, segment fallback)
+    wo_count_config = config_dict.get("work_order_count_distribution")
+    if wo_count_config:
+        spec = _parse_distribution_spec(wo_count_config)
+        if spec:
+            try:
+                work_order_count = create_distribution_from_spec(spec)
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Failed to parse work-order count spec: {e}")
+        else:
+            segments = _parse_distribution_string(str(wo_count_config))
+            if segments:
+                try:
+                    work_order_count = ProbabilityDistribution([ProbabilitySegment(pct, val) for pct, val in segments])
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Failed to parse work-order count distribution: {e}")
+
+    # Parse work-order status distribution
+    wo_status_config = config_dict.get("work_order_status_distribution")
+    if wo_status_config:
+        spec = _parse_distribution_spec(wo_status_config)
+        if spec:
+            try:
+                maybe_dist = create_distribution_from_spec(spec)
+                if isinstance(maybe_dist, ProbabilityDistribution):
+                    work_order_status = maybe_dist
+                else:
+                    logger.warning("work_order_status_distribution must resolve to segments")
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Failed to parse work-order status spec: {e}")
+        else:
+            segments = _parse_weighted_category_distribution(str(wo_status_config))
+            if segments:
+                try:
+                    work_order_status = ProbabilityDistribution([ProbabilitySegment(pct, val) for pct, val in segments])
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Failed to parse work-order status distribution: {e}")
+
+    # Parse work-order priority distribution
+    wo_priority_config = config_dict.get("work_order_priority_distribution")
+    if wo_priority_config:
+        spec = _parse_distribution_spec(wo_priority_config)
+        if spec:
+            try:
+                maybe_dist = create_distribution_from_spec(spec)
+                if isinstance(maybe_dist, ProbabilityDistribution):
+                    work_order_priority = maybe_dist
+                else:
+                    logger.warning("work_order_priority_distribution must resolve to segments")
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Failed to parse work-order priority spec: {e}")
+        else:
+            segments = _parse_weighted_category_distribution(str(wo_priority_config))
+            if segments:
+                try:
+                    work_order_priority = ProbabilityDistribution([ProbabilitySegment(pct, val) for pct, val in segments])
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Failed to parse work-order priority distribution: {e}")
+
+    # Parse work-order requesting organization distribution
+    wo_requesting_org_config = config_dict.get("work_order_requesting_organization_distribution")
+    if wo_requesting_org_config:
+        spec = _parse_distribution_spec(wo_requesting_org_config)
+        if spec:
+            try:
+                maybe_dist = create_distribution_from_spec(spec)
+                if isinstance(maybe_dist, ProbabilityDistribution):
+                    work_order_requesting_organization = maybe_dist
+                else:
+                    logger.warning("work_order_requesting_organization_distribution must resolve to segments")
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Failed to parse work-order requesting organization spec: {e}")
+        else:
+            segments = _parse_weighted_category_distribution(str(wo_requesting_org_config))
+            if segments:
+                try:
+                    work_order_requesting_organization = ProbabilityDistribution(
+                        [ProbabilitySegment(pct, val) for pct, val in segments]
+                    )
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Failed to parse work-order requesting organization distribution: {e}")
+
     # Create distributions - None values will use defaults from __post_init__
     return SimulationDistributions(
         condition_index=condition_index,
         age=age,
         grade=grade,
+        work_order_count=work_order_count,
+        work_order_status=work_order_status,
+        work_order_priority=work_order_priority,
+        work_order_requesting_organization=work_order_requesting_organization,
     )
 
 

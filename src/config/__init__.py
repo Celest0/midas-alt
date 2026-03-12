@@ -14,6 +14,15 @@ from .display import (
     create_settings_summary_text,
     create_system_types_table,
 )
+from .distributions import (
+    BaseDistribution,
+    BathtubCurveDistribution,
+    DistributionContext,
+    EventRateDistribution,
+    ProbabilityDistribution,
+    ProbabilitySegment,
+    create_distribution_from_spec,
+)
 from .functions.configure_logging import configure_logging
 from .loader import ConfigLoadError, load_settings_from_excel
 from .reference_data import FacilityType, SystemType
@@ -49,4 +58,12 @@ __all__ = [
     "load_settings_from_excel",
     "ConfigLoadError",
     "configure_logging",
+    # Distribution utilities
+    "BaseDistribution",
+    "DistributionContext",
+    "ProbabilitySegment",
+    "ProbabilityDistribution",
+    "EventRateDistribution",
+    "BathtubCurveDistribution",
+    "create_distribution_from_spec",
 ]

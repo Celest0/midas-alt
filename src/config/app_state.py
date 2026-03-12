@@ -8,6 +8,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .loader import ConfigLoadError
 from .settings import MIDASSettings
 
 logger = logging.getLogger(__name__)
@@ -82,9 +83,9 @@ class ApplicationState:
                 if load_result.installation_locations_loaded == 0:
                     load_result.add_warning("No installation locations loaded from configuration.")
 
-        except Exception as e:
+        except (ConfigLoadError, OSError, TypeError, ValueError) as e:
             logger.exception("Failed to load configuration")
-            load_result.add_error(f"Failed to load configuration: {e}")
+            load_result.add_error(f"Configuration load error: expected readable workbook (got {e})")
             settings = MIDASSettings.with_defaults()
 
         return cls(settings=settings, load_result=load_result)

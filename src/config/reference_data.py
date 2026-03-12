@@ -1,7 +1,7 @@
 """Reference data types loaded from configuration.
 
 These are the "type" definitions for facilities and systems,
-loaded from the Excel configuration file. 
+loaded from the Excel configuration file.
 """
 
 from dataclasses import dataclass
@@ -73,3 +73,19 @@ class InstallationLocation:
     location: str
     region: str
     coordinates: str
+
+
+@dataclass(frozen=True)
+class WorkOrderText:
+    """3 Distinct text blocks which make up the text required to fill out a Work Order.
+
+    Attributes:
+        problem_description: A description of the issue itself
+        requested_action: The requested actions to rectify the issue
+        action_taken: The actions taken to rectify the issue
+
+    """
+
+    problem_description: str
+    requested_action: str
+    action_taken: str

@@ -122,7 +122,7 @@ def create_installation_locations_table(settings: MIDASSettings) -> Table:
     table.add_column("Region", style="magenta")
     table.add_column("Coordinates", style="blue")
 
-    for loc in sorted(locations, key=lambda l: l.title):
+    for loc in sorted(locations, key=lambda location: location.title):
         table.add_row(
             str(loc.title),
             str(loc.location),

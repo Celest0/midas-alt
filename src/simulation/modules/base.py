@@ -1,2 +1,7 @@
+"""Base abstractions for simulation modules."""
+
+
 class Base:
-  pass
+    """Marker base class for simulation module implementations."""
+
+    pass

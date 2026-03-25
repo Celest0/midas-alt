@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from ...domain import Facility, Installation, System
+from ...models import Facility, Installation, System
+from ...models.work_order import WorkOrder
 
 if TYPE_CHECKING:
     from ...config import MIDASSettings
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
 
 class DataTransformer:
     """Transforms domain entities into exportable formats (tables, dicts).
-    
+
     Works with the new dataclass-based domain entities.
     """
 
@@ -27,9 +28,11 @@ class DataTransformer:
         Args:
             settings: Application settings for reference data lookup.
             include_time_series: Whether to include time series data.
+
         """
         # Lazy import to avoid circular dependency
         from ...config import MIDASSettings
+
         self.settings = settings or MIDASSettings.with_defaults()
         self.include_time_series = include_time_series
 
@@ -38,6 +41,7 @@ class DataTransformer:
         installations: list[Installation],
         facilities: list[Facility],
         systems: list[System],
+        work_orders: list[WorkOrder],
     ) -> dict[str, pd.DataFrame | None]:
         """Create normalized tables from domain entities.
 
@@ -45,9 +49,11 @@ class DataTransformer:
             installations: List of installations.
             facilities: List of facilities.
             systems: List of systems.
+            work_orders: List of work orders.
 
         Returns:
             Dictionary mapping table names to DataFrames.
+
         """
         # Build lookup for facilities and systems
         facilities_by_install = {}
@@ -65,50 +71,83 @@ class DataTransformer:
         # Create installations table
         installations_rows = []
         for install in installations:
-            installations_rows.append({
-                "id": install.id,
-                "title": install.title,
-                "condition_index": install.condition_index,
-                "facility_count": len(install.facility_ids),
-            })
+            installations_rows.append(
+                {
+                    "id": install.id,
+                    "title": install.title,
+                    "location": install.location,
+                    "region": install.region,
+                    "coordinates": install.coordinates,
+                    "condition_index": install.condition_index,
+                    "facility_count": len(install.facility_ids),
+                }
+            )
 
         # Create facilities table
         facilities_rows = []
         for facility in facilities:
             facility_type = self.settings.get_facility_type(facility.facility_type_key or 0)
-            facilities_rows.append({
-                "id": facility.id,
-                "installation_id": facility.installation_id,
-                "facility_type_key": facility.facility_type_key,
-                "title": facility_type.title if facility_type else "",
-                "year_constructed": facility.year_constructed,
-                "age_years": facility.age_years,
-                "condition_index": facility.condition_index,
-                "dependency_chain": facility.dependency_position,
-                "resiliency_grade": facility.resiliency_grade.value if facility.resiliency_grade else None,
-                "life_expectancy": facility_type.life_expectancy if facility_type else None,
-                "mission_criticality": facility_type.mission_criticality if facility_type else None,
-            })
+            facilities_rows.append(
+                {
+                    "id": facility.id,
+                    "installation_id": facility.installation_id,
+                    "facility_type_key": facility.facility_type_key,
+                    "title": facility_type.title if facility_type else "",
+                    "year_constructed": facility.year_constructed,
+                    "age_years": facility.age_years,
+                    "condition_index": facility.condition_index,
+                    "dependency_chain": facility.dependency_position,
+                    "resiliency_grade": facility.resiliency_grade.value if facility.resiliency_grade else None,
+                    "life_expectancy": facility_type.life_expectancy if facility_type else None,
+                    "mission_criticality": facility_type.mission_criticality if facility_type else None,
+                }
+            )
 
         # Create systems table
         systems_rows = []
         for system in systems:
             system_type = self.settings.get_system_type(system.system_type_key or 0)
-            systems_rows.append({
-                "id": system.id,
-                "facility_id": system.facility_id,
-                "system_type_key": system.system_type_key,
-                "title": system_type.title if system_type else "",
-                "year_constructed": system.year_constructed,
-                "age_years": system.age_years,
-                "condition_index": system.condition_index,
-                "life_expectancy": system_type.life_expectancy if system_type else None,
-            })
+            systems_rows.append(
+                {
+                    "id": system.id,
+                    "facility_id": system.facility_id,
+                    "system_type_key": system.system_type_key,
+                    "title": system_type.title if system_type else "",
+                    "year_constructed": system.year_constructed,
+                    "age_years": system.age_years,
+                    "condition_index": system.condition_index,
+                    "life_expectancy": system_type.life_expectancy if system_type else None,
+                }
+            )
+
+        work_orders_rows = []
+        for work_order in work_orders:
+            work_orders_rows.append(
+                {
+                    "id": work_order.id,
+                    "installation_id": work_order.installation_id,
+                    "facility_id": work_order.facility_id,
+                    "system_id": work_order.system_id,
+                    "requesting_organization": work_order.requesting_organization,
+                    "work_category": work_order.work_category,
+                    "room_area": work_order.room_area,
+                    "impacts_mission": work_order.impacts_mission,
+                    "status": work_order.status.value if work_order.status else None,
+                    "priority": work_order.priority.value if work_order.priority else None,
+                    "trade": work_order.trade.value if work_order.trade else None,
+                    "request_datetime": work_order.request_datetime,
+                    "completion_datetime": work_order.completion_datetime,
+                    "problem_description": work_order.problem_description,
+                    "requested_action": work_order.requested_action,
+                    "actions_taken": work_order.actions_taken,
+                }
+            )
 
         tables = {
             "installations": pd.DataFrame(installations_rows) if installations_rows else None,
             "facilities": pd.DataFrame(facilities_rows) if facilities_rows else None,
             "systems": pd.DataFrame(systems_rows) if systems_rows else None,
+            "work_orders": pd.DataFrame(work_orders_rows) if work_orders_rows else None,
         }
 
         # Generate time series data if requested
@@ -126,6 +165,7 @@ class DataTransformer:
         installations: list[Installation],
         facilities: list[Facility],
         systems: list[System],
+        work_orders: list[WorkOrder],
     ) -> list[dict]:
         """Create flattened rows for denormalized export.
 
@@ -133,16 +173,22 @@ class DataTransformer:
             installations: List of installations.
             facilities: List of facilities.
             systems: List of systems.
+            work_orders: List of work orders.
 
         Returns:
             List of flattened row dictionaries.
+
         """
         # Build lookups
         install_map = {i.id: i for i in installations}
         facility_map = {f.id: f for f in facilities}
 
+        system_map = {s.id: s for s in systems}
         rows = []
-        for system in systems:
+        for work_order in work_orders:
+            system = system_map.get(work_order.system_id or "")
+            if not system:
+                continue
             facility = facility_map.get(system.facility_id)
             if not facility:
                 continue
@@ -156,6 +202,9 @@ class DataTransformer:
             row = {
                 "installation_id": install.id,
                 "installation_title": install.title,
+                "installation_location": install.location,
+                "installation_region": install.region,
+                "installation_coordinates": install.coordinates,
                 "installation_condition_index": install.condition_index,
                 "facility_id": facility.id,
                 "facility_type_key": facility.facility_type_key,
@@ -171,6 +220,17 @@ class DataTransformer:
                 "system_year_constructed": system.year_constructed,
                 "system_age_years": system.age_years,
                 "system_condition_index": system.condition_index,
+                "work_order_id": work_order.id,
+                "work_order_status": work_order.status.value if work_order.status else None,
+                "work_order_priority": work_order.priority.value if work_order.priority else None,
+                "work_order_trade": work_order.trade.value if work_order.trade else None,
+                "work_order_requesting_organization": work_order.requesting_organization,
+                "work_order_impacts_mission": work_order.impacts_mission,
+                "work_order_request_datetime": work_order.request_datetime,
+                "work_order_completion_datetime": work_order.completion_datetime,
+                "work_order_problem_description": work_order.problem_description,
+                "work_order_requested_action": work_order.requested_action,
+                "work_order_actions_taken": work_order.actions_taken,
             }
             rows.append(row)
 
@@ -181,16 +241,19 @@ class DataTransformer:
         installations: list[Installation],
         facilities: list[Facility],
         systems: list[System],
+        work_orders: list[WorkOrder],
     ) -> dict:
-        """Create nested dictionary structure for JSON export.
+        """Create nested dictionary structure of generated entities.
 
         Args:
             installations: List of installations.
             facilities: List of facilities.
             systems: List of systems.
+            work_orders: List of work orders.
 
         Returns:
             Dictionary with nested installation structure.
+
         """
         # Build lookups
         facilities_by_install = {}
@@ -205,11 +268,22 @@ class DataTransformer:
                 systems_by_facility[s.facility_id] = []
             systems_by_facility[s.facility_id].append(s)
 
+        work_orders_by_system: dict[str, list[WorkOrder]] = {}
+        for work_order in work_orders:
+            if not work_order.system_id:
+                continue
+            if work_order.system_id not in work_orders_by_system:
+                work_orders_by_system[work_order.system_id] = []
+            work_orders_by_system[work_order.system_id].append(work_order)
+
         data = []
         for install in installations:
             install_data = {
                 "id": install.id,
                 "title": install.title,
+                "location": install.location,
+                "region": install.region,
+                "coordinates": install.coordinates,
                 "condition_index": install.condition_index,
                 "facilities": [],
             }
@@ -237,7 +311,24 @@ class DataTransformer:
                         "year_constructed": system.year_constructed,
                         "age_years": system.age_years,
                         "condition_index": system.condition_index,
+                        "work_orders": [],
                     }
+                    for work_order in work_orders_by_system.get(system.id, []):
+                        system_data["work_orders"].append(
+                            {
+                                "id": work_order.id,
+                                "status": work_order.status.value if work_order.status else None,
+                                "priority": work_order.priority.value if work_order.priority else None,
+                                "trade": work_order.trade.value if work_order.trade else None,
+                                "requesting_organization": work_order.requesting_organization,
+                                "impacts_mission": work_order.impacts_mission,
+                                "request_datetime": work_order.request_datetime,
+                                "completion_datetime": work_order.completion_datetime,
+                                "problem_description": work_order.problem_description,
+                                "requested_action": work_order.requested_action,
+                                "actions_taken": work_order.actions_taken,
+                            }
+                        )
                     facility_data["systems"].append(system_data)
 
                 install_data["facilities"].append(facility_data)
@@ -260,9 +351,9 @@ class DataTransformer:
 
         Returns:
             DataFrame with time series data, or None if no data generated.
+
         """
         rows = []
-        current_date = datetime.now()
 
         for facility in facilities:
             if facility.condition_index is None or facility.year_constructed is None:
@@ -278,15 +369,17 @@ class DataTransformer:
             )
 
             for months_ago, ci_value, date_str in time_series:
-                rows.append({
-                    "entity_id": facility.id,
-                    "entity_type": "facility",
-                    "facility_type_key": facility.facility_type_key,
-                    "title": title,
-                    "date": date_str,
-                    "months_ago": months_ago,
-                    "condition_index": ci_value,
-                })
+                rows.append(
+                    {
+                        "entity_id": facility.id,
+                        "entity_type": "facility",
+                        "facility_type_key": facility.facility_type_key,
+                        "title": title,
+                        "date": date_str,
+                        "months_ago": months_ago,
+                        "condition_index": ci_value,
+                    }
+                )
 
         return pd.DataFrame(rows) if rows else None
 
@@ -304,9 +397,9 @@ class DataTransformer:
 
         Returns:
             DataFrame with time series data, or None if no data generated.
+
         """
         rows = []
-        current_date = datetime.now()
 
         for system in systems:
             if system.condition_index is None or system.year_constructed is None:
@@ -322,16 +415,18 @@ class DataTransformer:
             )
 
             for months_ago, ci_value, date_str in time_series:
-                rows.append({
-                    "entity_id": system.id,
-                    "entity_type": "system",
-                    "system_type_key": system.system_type_key,
-                    "facility_id": system.facility_id,
-                    "title": title,
-                    "date": date_str,
-                    "months_ago": months_ago,
-                    "condition_index": ci_value,
-                })
+                rows.append(
+                    {
+                        "entity_id": system.id,
+                        "entity_type": "system",
+                        "system_type_key": system.system_type_key,
+                        "facility_id": system.facility_id,
+                        "title": title,
+                        "date": date_str,
+                        "months_ago": months_ago,
+                        "condition_index": ci_value,
+                    }
+                )
 
         return pd.DataFrame(rows) if rows else None
 
@@ -354,13 +449,14 @@ class DataTransformer:
 
         Returns:
             List of (months_ago, condition_index, date_string) tuples.
+
         """
         current_date = datetime.now()
-        
+
         # Calculate age in months
         years = current_date.year - year_constructed
         age_months = years * 12 + current_date.month - 1
-        
+
         if age_months <= 0:
             return [(0, current_ci, current_date.strftime("%Y-%m"))]
 
@@ -379,10 +475,10 @@ class DataTransformer:
 
         # Generate time series by calculating CI at each month
         time_series = []
-        
+
         # Sample points: monthly for first 2 years, then quarterly, then yearly
         sample_points = self._get_sample_points(age_months)
-        
+
         for months_ago in sample_points:
             # Calculate what month this was
             total_months = current_date.year * 12 + current_date.month - 1
@@ -390,14 +486,14 @@ class DataTransformer:
             past_year = past_total_months // 12
             past_month = (past_total_months % 12) + 1
             date_str = f"{past_year:04d}-{past_month:02d}"
-            
+
             # CI at (age_months - months_ago) months old
             age_at_point = age_months - months_ago
             if age_at_point <= 0:
                 ci_at_point = initial_ci
             else:
                 ci_at_point = initial_ci * ((1 - decay_rate) ** age_at_point)
-            
+
             time_series.append((months_ago, round(ci_at_point, 2), date_str))
 
         return time_series
@@ -415,32 +511,33 @@ class DataTransformer:
 
         Returns:
             List of months_ago values to sample.
+
         """
         # Limit to max_time_series_years from settings
         max_months = self.settings.degradation.max_time_series_years * 12
         effective_age = min(age_months, max_months)
-        
+
         points = []
-        
+
         # Current month (months_ago = 0)
         points.append(0)
-        
+
         # Monthly for first 24 months
         for m in range(1, min(25, effective_age + 1)):
             points.append(m)
-        
+
         # Quarterly from 24-120 months (2-10 years)
         for m in range(27, min(121, effective_age + 1), 3):
             points.append(m)
-        
+
         # Yearly beyond 10 years (if max allows)
         for m in range(132, effective_age + 1, 12):
             points.append(m)
-        
+
         # Always include the oldest point within the limit
         if effective_age not in points and effective_age > 0:
             points.append(effective_age)
-        
+
         return sorted(set(points))
 
     def _generate_flat_series(
@@ -458,18 +555,19 @@ class DataTransformer:
 
         Returns:
             List of (months_ago, condition_index, date_string) tuples.
+
         """
         # _get_sample_points already limits to max_time_series_years
         sample_points = self._get_sample_points(age_months)
         time_series = []
-        
+
         for months_ago in sample_points:
             total_months = current_date.year * 12 + current_date.month - 1
             past_total_months = total_months - months_ago
             past_year = past_total_months // 12
             past_month = (past_total_months % 12) + 1
             date_str = f"{past_year:04d}-{past_month:02d}"
-            
+
             time_series.append((months_ago, round(current_ci, 2), date_str))
-        
+
         return time_series

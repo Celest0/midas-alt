@@ -7,7 +7,6 @@ class OutputFormat(Enum):
     """Output file format options."""
 
     CSV = "csv"
-    JSON = "json"
     XLSX = "xlsx"
 
 

@@ -4,10 +4,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ...domain import Facility, Installation, System
+from ...models import Facility, Installation, System
+from ...models.work_order import WorkOrder
 from .config import ExportConfig
 from .enums import OutputFormat, OutputLayout
-from .formatters import CSVFormatter, ExcelFormatter, JSONFormatter
+from .formatters import CSVFormatter, ExcelFormatter
 from .transformers import DataTransformer
 
 if TYPE_CHECKING:
@@ -35,18 +36,19 @@ class DataExporter:
 
         Args:
             file_name: Base name for the output file (without extension).
-            output_format: Format for export (csv, json, xlsx).
+            output_format: Format for export (csv, xlsx).
             output_directory: Directory where file will be saved.
             include_time_series: Whether to include time series data.
             layout: Output layout - normalized or denormalized.
             generate_metadata: Whether to generate a metadata JSON file.
             description: Optional description for the dataset.
             settings: Application settings for reference data.
+
         """
         # Lazy imports to avoid circular dependency
         from ...config import MIDASSettings
         from ..generator import DataGenerator
-        
+
         self.settings = settings or MIDASSettings.with_defaults()
 
         # Create export configuration
@@ -74,12 +76,10 @@ class DataExporter:
         """Create the appropriate formatter based on output format."""
         if self.config.output_format == OutputFormat.CSV:
             return CSVFormatter(self.config, self.transformer)
-        elif self.config.output_format == OutputFormat.JSON:
-            return JSONFormatter(self.config, self.transformer)
         elif self.config.output_format == OutputFormat.XLSX:
             return ExcelFormatter(self.config, self.transformer)
         else:
-            raise ValueError(f"Unsupported output format: {self.config.output_format}")
+            raise ValueError(f"Invalid output format: expected one of ['csv', 'xlsx'] (got {self.config.output_format})")
 
     @property
     def file_path(self) -> Path:
@@ -104,40 +104,53 @@ class DataExporter:
 
         Returns:
             Path to the created file.
+
         """
         # Generate data
         if method == "installations":
             if target_count is None:
-                raise ValueError("target_count is required for 'installations' method")
-            installations, facilities, systems = self.generator.generate_installations(target_count)
+                raise ValueError("Invalid argument: target_count is required for method 'installations' (got None)")
+            result = self.generator.generate_installations(target_count)
 
         elif method == "facilities":
             if target_count is None:
-                raise ValueError("target_count is required for 'facilities' method")
-            # Generate multiple facilities in one installation
-            installation, facilities, systems = self.generator.generate_installation()
+                raise ValueError("Invalid argument: target_count is required for method 'facilities' (got None)")
+            result = self.generator.generate_installation()
+            installations = list(result.installations)
+            facilities = list(result.facilities)
+            systems = list(result.systems)
+            work_orders = list(result.work_orders)
             # Generate additional facilities
             for _ in range(target_count - len(facilities)):
-                _, new_facilities, new_systems = self.generator.generate_installation()
-                facilities.extend(new_facilities)
-                systems.extend(new_systems)
-            installations = [installation]
+                extra = self.generator.generate_installation()
+                facilities.extend(extra.facilities)
+                systems.extend(extra.systems)
+                work_orders.extend(extra.work_orders)
+                installations.extend(extra.installations)
+            result.installations = installations
+            result.facilities = facilities
+            result.systems = systems
+            result.work_orders = work_orders
 
         else:  # default
-            installation, facilities, systems = self.generator.generate_installation()
-            installations = [installation]
+            result = self.generator.generate_installation()
 
+        installations = result.installations
+        facilities = result.facilities
+        systems = result.systems
+        work_orders = result.work_orders
         # Create metadata
-        metadata = self._create_metadata(method, target_count, installations, facilities, systems)
+        metadata = self._create_metadata(method, target_count, installations, facilities, systems, work_orders)
 
         # Export using formatter
-        return self.formatter.export(installations, facilities, systems, metadata)
+        return self.formatter.export(installations, facilities, systems, work_orders, metadata)
 
     def export_existing(
         self,
         installations: list[Installation],
         facilities: list[Facility],
         systems: list[System],
+        work_orders: list[WorkOrder],
     ) -> Path:
         """Export existing data (not generated).
 
@@ -145,14 +158,14 @@ class DataExporter:
             installations: List of installations to export.
             facilities: List of facilities to export.
             systems: List of systems to export.
+            work_orders: List of work orders to export.
 
         Returns:
             Path to the created file.
+
         """
-        metadata = self._create_metadata(
-            "existing", None, installations, facilities, systems
-        )
-        return self.formatter.export(installations, facilities, systems, metadata)
+        metadata = self._create_metadata("existing", None, installations, facilities, systems, work_orders)
+        return self.formatter.export(installations, facilities, systems, work_orders, metadata)
 
     def _create_metadata(
         self,
@@ -161,6 +174,7 @@ class DataExporter:
         installations: list[Installation],
         facilities: list[Facility],
         systems: list[System],
+        work_orders: list[WorkOrder],
     ) -> dict:
         """Create metadata dictionary."""
         return {
@@ -175,5 +189,6 @@ class DataExporter:
                 "installations": len(installations),
                 "facilities": len(facilities),
                 "systems": len(systems),
+                "work_orders": len(work_orders),
             },
         }

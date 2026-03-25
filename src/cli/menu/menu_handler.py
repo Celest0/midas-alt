@@ -90,7 +90,7 @@ class MenuHandler:
             # Add padding to push content to bottom
             padding_lines = max(0, terminal_height - menu_height - 2)
             padding = "\n" * padding_lines
-        except Exception:
+        except (AttributeError, OSError, TypeError, ValueError):
             # If we can't determine height, just use minimal padding
             padding = "\n"
 

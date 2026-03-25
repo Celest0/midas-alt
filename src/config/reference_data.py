@@ -9,13 +9,14 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class FacilityType:
-    """Definition of a facility type from configuration.
+    """Facility Types from configuration.
 
     Attributes:
         key: Unique identifier for this facility type
         title: Human-readable name
         life_expectancy: Expected lifespan in years
         mission_criticality: Importance rating (1-5 typically)
+
     """
 
     key: int
@@ -31,13 +32,14 @@ class FacilityType:
 
 @dataclass(frozen=True)
 class SystemType:
-    """Definition of a system type from configuration.
+    """System Types from configuration.
 
     Attributes:
         key: Unique identifier for this system type
         title: Human-readable name
         life_expectancy: Expected lifespan in years
         facility_keys: List of facility type keys this system can belong to
+
     """
 
     key: int
@@ -53,3 +55,37 @@ class SystemType:
     def belongs_to_facility(self, facility_key: int) -> bool:
         """Check if this system type belongs to a facility type."""
         return facility_key in self.facility_keys
+
+
+@dataclass(frozen=True)
+class InstallationLocation:
+    """Installation Locations from configuration.
+
+    Attributes:
+        title: Name of the Installation
+        location: Nearest city to the installation
+        region: Country or State where the installation resides
+        coordinates: Latitude and Longitude of the Installation e.x. 34°39′59″N 099°16′05″W
+
+    """
+
+    title: str
+    location: str
+    region: str
+    coordinates: str
+
+
+@dataclass(frozen=True)
+class WorkOrderText:
+    """3 Distinct text blocks which make up the text required to fill out a Work Order.
+
+    Attributes:
+        problem_description: A description of the issue itself
+        requested_action: The requested actions to rectify the issue
+        action_taken: The actions taken to rectify the issue
+
+    """
+
+    problem_description: str
+    requested_action: str
+    action_taken: str

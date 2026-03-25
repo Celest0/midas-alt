@@ -205,3 +205,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+output/*
+.DS_Store
+.cursor/settings.json
+.cursor/hooks/state/continual-learning-index.json
+AGENTS.md
